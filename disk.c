@@ -1960,7 +1960,7 @@ static BOOL testread_ds2(UBYTE *buffer, globaldata *g)
 		(g->ErrorMsg)(ACCESS_DEBUG3, args, 1, g);
 #endif
 
-		if (g->lastblocknative + (1 << g->blocklogshift) - 1 > capacity) {
+		if (g->lastblocknative > capacity) {
 #if DETECTDEBUG
 			DebugPutStr("DoSCSICommand capacity smaller than last block\n");
 #endif
@@ -1969,7 +1969,7 @@ static BOOL testread_ds2(UBYTE *buffer, globaldata *g)
 		fillbuffer(buffer, cnt, g);
 		/* Read(10) */
 		*((UWORD *)&cmdbuf[0]) = 0x2800;
-		*((ULONG *)&cmdbuf[2]) = g->lastblocknative;
+		*((ULONG *)&cmdbuf[2]) = g->lastblock << g->blocklogshift;
 		*((ULONG *)&cmdbuf[6]) = 1 << (8 + g->blocklogshift);
 		if (!DoSCSICommand(buffer, BLOCKSIZE, BLOCKSIZE, cmdbuf, 10, SCSIF_READ, g)) {
 #if DETECTDEBUG
@@ -2057,14 +2057,15 @@ static BOOL testread_td2(UBYTE *buffer, globaldata *g)
 #endif
 
 	for (cnt = 0; cnt < 2; cnt++) {
+		ULONG lastblock = g->lastblock << g->blocklogshift;
 		fillbuffer(buffer, cnt, g);
 		io->iotd_Req.io_Command = CMD_READ;
 		io->iotd_Req.io_Length  = BLOCKSIZE;
 		io->iotd_Req.io_Data    = buffer;
-		io->iotd_Req.io_Offset  = g->lastblocknative << BLOCKNATIVESHIFT;
+		io->iotd_Req.io_Offset  = lastblock << BLOCKNATIVESHIFT;
 		io->iotd_Req.io_Actual  = 0;
 		if (g->tdmode >= ACCESS_TD64) {
-			io->iotd_Req.io_Actual  = g->lastblocknative >> (32 - BLOCKNATIVESHIFT);
+			io->iotd_Req.io_Actual  = lastblock >> (32 - BLOCKNATIVESHIFT);
 			io->iotd_Req.io_Command = g->tdmode == ACCESS_NSD ? NSCMD_TD_READ64 : TD_READ64;
 		}
 		if (DoIO((struct IORequest*)io) != 0)
