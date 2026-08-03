@@ -411,10 +411,11 @@ static rootblock_t *MakeRootBlock (DSTR diskname, ULONG rsblocks, globaldata *g)
 		return NULL;
 	}
 
-	// show experimental warning if new format
 	if (rbl->disktype == ID_PFS2_DISK) {
 		g->supermode = 1;
 		rbl->options |= MODE_SUPERINDEX;
+#if WARN_EXPERIMENTAL
+		// show experimental warning if new format
 		ULONG args[7];
 		args[0] = g->blocksize_phys;
 		args[1] = BLOCKSIZE;
@@ -424,6 +425,7 @@ static rootblock_t *MakeRootBlock (DSTR diskname, ULONG rsblocks, globaldata *g)
 		args[5] = g->lastblocknative;
 		args[6] = g->lastblock;
 		NormalErrorMsg(AFS_WARNING_EXPERIMENTAL_DISK, args, 1);
+#endif
 	}
 
 	rescluster = resblocksize >> BLOCKSHIFT;

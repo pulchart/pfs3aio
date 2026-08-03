@@ -2,5 +2,6 @@
 *.map
 *.out
 *.info
+*.vs
 pfs3aio*
 boot

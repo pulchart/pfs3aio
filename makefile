@@ -13,7 +13,7 @@ CFLAGS=-Os -fbbb=+ -m68000 -noixemul -fomit-frame-pointer -nostartfiles -mregpar
 	-DMULTIUSER=0 -DPROTECTION=0 -DVERSION23=1 -DROLLOVER=1 \
 	-DLIMIT_MAXTRANSFER=0x20000 -DUNSAFEQUIT=1 \
 	-DREVDATE=$(NOWDATE) -DREVTIME=$(NOWTIME) \
-	-DDETECTDEBUG=0
+	-DDETECTDEBUG=0 -DWARN_EXPERIMENTAL=0
 
 OBJS = startup.o boot.o init.o assroutines.o messages.o volume.o lock.o dostohandlerinterface.o anodes.o directory.o lru.o disk.o \
 	update.o allocation.o CheckAccess.o diskchange.o resethandler.o kswrapper.o format.o fsresource.o end.o
