@@ -622,6 +622,9 @@ struct globaldata
 	struct allocation_data_s glob_allocdata;
 
 	BOOL updateok;
+	BOOL updatefailshown;               /* AFS_ERROR_UPDATE_FAIL already shown for the
+	                                     * current failure episode; reset on successful
+	                                     * update (prevents a requester per retry) */
 
 	struct SignalSemaphore *device_unit_lock_sema;
 	LONG device_unit_lock_count;

@@ -527,6 +527,13 @@ VOID FreeBlocksAC (struct anodechain *achain, ULONG size, enum freeblocktype fre
 			chnode = chnode->next;
 
 l1:   /* get blocks to free */
+		/* If the tobefreed cache is full even after the flush attempts
+		 * below (i.e. disk updates are failing), stop freeing: the
+		 * remaining blocks simply stay allocated (recovered later by
+		 * the postponed operation) instead of overflowing the cache.
+		 */
+		if (i >= TBF_CACHE_SIZE)
+			break;
 		if (chnode->an.clustersize <= size)
 		{
 			freeing = chnode->an.clustersize;
@@ -681,9 +688,61 @@ void UpdateFreeList (globaldata *g)
 	}
 
 	/* update global data */
-	/* alloc_data.alloc_available should already be equal blocksfree - alwaysfree */
+	/* alloc_data.alloc_available should already be equal blocksfree - alwaysfree
+	 *
+	 * NOTE: the tobefreed list itself is NOT cleared here. UpdateDisk
+	 * calls CommitFreeList() once the rootblock write has succeeded, or
+	 * UndoFreeList() if the update failed (so the uncommitted frees
+	 * cannot be allocated while the on-disk tree still references them;
+	 * the list is then reapplied by the next attempt).
+	 */
+	g->rootblock->blocksfree = alloc_data.clean_blocksfree;
+	g->currentvolume->rootblockchangeflag = TRUE;
+}
+
+/* Called by UpdateDisk after a successful commit: the frees applied by
+ * UpdateFreeList are now on disk, the list can be emptied.
+ */
+void CommitFreeList (globaldata *g)
+{
 	alloc_data.tobefreed_index = 0;
 	alloc_data.tbf_resneed = 0;
+}
+
+/* Called by UpdateDisk after a FAILED commit: revert the bitmap changes
+ * made by UpdateFreeList, so the blocks - still referenced by the
+ * on-disk tree - cannot be handed out by the allocator before a later
+ * update commits the frees for real.
+ */
+void UndoFreeList (globaldata *g)
+{
+  cbitmapblock_t *bitmap = 0;
+  UWORD i;
+  ULONG longnr, blocknr, bmseqnr, newbmseqnr, bmoffset, bitnr;
+
+	bmseqnr = ~0;
+	for (i=0; i<alloc_data.tobefreed_index; i++)
+	{
+		for ( blocknr = alloc_data.tobefreed[i][TBF_BLOCKNR];
+			  blocknr < alloc_data.tobefreed[i][TBF_SIZE] + alloc_data.tobefreed[i][TBF_BLOCKNR];
+			  blocknr++ )
+		{
+			bitnr = blocknr - alloc_data.bitmapstart;
+			longnr = bitnr/32;
+			newbmseqnr = longnr/alloc_data.longsperbmb;
+			bmoffset = longnr%alloc_data.longsperbmb;
+			if(newbmseqnr != bmseqnr)
+			{
+				bmseqnr = newbmseqnr;
+				bitmap = GetBitmapBlock (bmseqnr, g);
+			}
+			bitmap->blk.bitmap[bmoffset] &= ~(1<<(31-(bitnr%32)));
+			MakeBlockDirty ((struct cachedblock *)bitmap, g);
+		}
+
+		alloc_data.clean_blocksfree -= alloc_data.tobefreed[i][TBF_SIZE];
+	}
+
 	g->rootblock->blocksfree = alloc_data.clean_blocksfree;
 	g->currentvolume->rootblockchangeflag = TRUE;
 }

@@ -389,7 +389,12 @@ void SAVEDS EntryPoint (void)
 					else
 					{
 						struct idlehandle *idle;
-						if (g->dirty)
+						/* don't retry while soft protected: the volume
+						 * stays dirty and is flushed when the
+						 * protection is lifted (this avoids a
+						 * permanent 5 Hz retry loop)
+						 */
+						if (g->dirty && !g->softprotect)
 						{
 							/* Update disk but wait with turning out motor */
 							UpdateDisk(g);

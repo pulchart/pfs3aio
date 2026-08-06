@@ -324,6 +324,13 @@ static void DiskRemoveSequence(globaldata *g)
 	{
 		RequestCurrentVolumeBack(g);
 		UpdateDisk(g);
+		/* If the update failed even with the volume back, the changes
+		 * cannot be saved. Drop them explicitly (UpdateDisk keeps
+		 * g->dirty set on failure) so the volume can be removed on the
+		 * next change event instead of requesting the volume back
+		 * forever.
+		 */
+		g->dirty = FALSE;
 		return;
 	}
 
@@ -392,6 +399,9 @@ static void DiskInsertSequence(struct rootblock *rootblock, globaldata *g)
   SIPTR locklist;
 
 	ENTER("DiskInsertSequence");
+
+	/* fresh volume: report update failures anew */
+	g->updatefailshown = FALSE;
 
 	/* -I- Search new disk in volumelist */
 

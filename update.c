@@ -252,27 +252,55 @@ BOOL UpdateDisk (globaldata *g)
 #endif
 
 
-		/* commit reserved to be freed list */
-		CommitReservedToBeFreed(g);
-
 		/* update bitmap and bitmap index blocks */
 		updateok &= UpdateList ((struct cachedblock *)HeadOf(&volume->bmblks), g);
 		updateok &= UpdateList ((struct cachedblock *)HeadOf(&volume->bmindexblks), g);
 
-		/* update root (MUST be done last) */
+		/* update root (MUST be done last) - this is the commit point,
+		 * so its result must be checked as well
+		 */
+		if (updateok)
+			updateok = RawWrite((UBYTE *)volume->rootblk,
+				volume->rootblk->rblkcluster, ROOTBLOCK, g) == 0;
+
 		if (updateok)
 		{
-			RawWrite((UBYTE *)volume->rootblk, volume->rootblk->rblkcluster, ROOTBLOCK, g);
 			volume->rootblk->datestamp++;
 			volume->rootblockchangeflag = FALSE;
+
+			/* Now that the new rootblock is on disk, the old locations
+			 * of all reallocated reserved blocks are unreferenced and
+			 * may become allocatable. Committing the frees only after a
+			 * successful root write means the just-written reserved
+			 * bitmap is one commit conservative: a crash merely leaks
+			 * those blocks until the next successful update, instead of
+			 * risking reuse of blocks the on-disk root still references.
+			 */
+			CommitReservedToBeFreed(g);
+			CommitFreeList(g);
 
 			/* make sure update is really done */
 			UpdateAndMotorOff(g);
 			success = TRUE;
+			g->dirty = FALSE;
+			g->updatefailshown = FALSE;
 		}
 		else
 		{
-			ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+			/* The update did not complete: keep g->dirty set so the
+			 * timer/flush paths retry, and keep the queued reserved
+			 * frees for the next successful commit. The user-space
+			 * frees applied by UpdateFreeList are reverted so the
+			 * allocator cannot reuse blocks the on-disk tree still
+			 * references; the preserved tobefreed list reapplies them
+			 * on the next attempt.
+			 */
+			UndoFreeList(g);
+			if (!g->updatefailshown)
+			{
+				ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+				g->updatefailshown = TRUE;
+			}
 			success = FALSE;
 		}
 
@@ -283,12 +311,24 @@ BOOL UpdateDisk (globaldata *g)
 	else
 	{
 		if (volume && g->dirty && g->softprotect)
-			ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+		{
+			/* volume is dirty but soft protected (usually error
+			 * enforced): keep g->dirty so the data is flushed when the
+			 * protection is lifted, but tell the user only once.
+			 */
+			if (!g->updatefailshown)
+			{
+				ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+				g->updatefailshown = TRUE;
+			}
+		}
+		else
+		{
+			g->dirty = FALSE;
+		}
 
 		success = FALSE;
 	}
-
-	g->dirty = FALSE;
 
 	EXIT("UpdateDisk");
 	return success;
@@ -458,7 +498,12 @@ static BOOL UpdateList (struct cachedblock *blk, globaldata *g)
 	{
 		if (blk->changeflag)
 		{
-			FreeReservedBlock (blk->oldblocknr, g);
+			/* Queue the old location instead of freeing it directly:
+			 * it is still referenced by the on-disk rootblock and must
+			 * not become allocatable until the commit (root write) has
+			 * actually succeeded. CommitReservedToBeFreed runs after it.
+			 */
+			ResToBeFreed (blk->oldblocknr, g);
 			blk2 = (struct cbitmapblock *)blk;
 			blk2->blk.datestamp = blk2->volume->rootblk->datestamp;
 			blk->oldblocknr = 0;
@@ -475,7 +520,11 @@ static BOOL UpdateList (struct cachedblock *blk, globaldata *g)
 	return TRUE;
 
   update_error:
-	ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+	if (!g->updatefailshown)
+	{
+		ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+		g->updatefailshown = TRUE;
+	}
 	return FALSE;
 }
 
@@ -488,12 +537,18 @@ static BOOL UpdateDirtyBlock (struct cachedblock *blk, globaldata *g)
 
 	if (blk->changeflag)
 	{
-		FreeReservedBlock (blk->oldblocknr, g);
+		/* see UpdateList: keep the old location reserved until the
+		 * commit has succeeded */
+		ResToBeFreed (blk->oldblocknr, g);
 		blk->oldblocknr = 0;
 		error = RawWrite ((UBYTE *)&blk->data, RESCLUSTER, blk->blocknr, g);
 		if (error)
 		{
-			ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+			if (!g->updatefailshown)
+			{
+				ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+				g->updatefailshown = TRUE;
+			}
 			return FALSE;
 		}
 	}
