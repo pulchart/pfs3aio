@@ -478,15 +478,26 @@ ULONG AllocAnode (ULONG connect, globaldata *g)
 void FreeAnode (ULONG anodenr, globaldata *g)
 {
   struct canode anode = {0};
+  ULONG seqnr;
 
 	/* don't kill reserved anodes */
-	if (anodenr < ANODE_USERFIRST) 
+	if (anodenr < ANODE_USERFIRST)
 	{
 		anode.blocknr = (ULONG)~0L;
 	}
 
 	SaveAnode (&anode, anodenr, g);
-	andata.anblkbitmap[(anodenr>>16)/32] |= 1 << (31 - ((anodenr>>16)%32));
+	/* the anodenr encodes the block seqnr differently depending on
+	 * split mode (cf. GetAnode/SaveAnode); anodenr>>16 is only valid
+	 * in split mode - in non-split mode it marked the wrong block as
+	 * having free slots
+	 */
+	if (g->anodesplitmode)
+		seqnr = anodenr >> 16;
+	else
+		seqnr = anodenr / andata.anodesperblock;
+	if (seqnr/32 < andata.anblkbitmapsize)
+		andata.anblkbitmap[seqnr/32] |= 1 << (31 - (seqnr%32));
 }
 
 
