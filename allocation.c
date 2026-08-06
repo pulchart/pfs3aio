@@ -572,20 +572,22 @@ l1:   /* get blocks to free */
 		{
 			alloc_data.tobefreed_index = i;
 			g->dirty = DOSTRUE;
-			if (rext && freetype == freeanodes)
+			if (freetype == freeanodes)
 			{
 				/* make anodechain consistent */
 				RestoreAnodeChain (achain, empty, tail, g);
 				tail = NULL;
 
 				/* postponed op: finish operation later */
-				rext->blk.tobedone.argument2 = size;
+				if (rext)
+					rext->blk.tobedone.argument2 = size;
 			}
-			else
+			else if (rext)
 				/* postponed op: repeat operation later, but don't increase blocks free twice */
 				rext->blk.tobedone.argument3 = blocksdone;
 
-			MakeBlockDirty ((struct cachedblock *)rext, g);
+			if (rext)
+				MakeBlockDirty ((struct cachedblock *)rext, g);
 			UpdateDisk (g);
 			i = alloc_data.tobefreed_index;
 		}
