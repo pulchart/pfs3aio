@@ -286,7 +286,24 @@ void NewVolume (BOOL FORCE, globaldata *g)
 		{
 			if (oldstate)
 				DiskRemoveSequence (g);
-			DiskInsertSequence (rootblock, g);
+			/* Only now, with the old volume updated and removed, is it
+			 * safe to (re)initialize the LRU cache for the new volume's
+			 * reserved block size (InitLRU frees all cached blocks when
+			 * the size differs).
+			 */
+			if (InitLRU (g, rootblock->reserved_blksize))
+			{
+				DiskInsertSequence (rootblock, g);
+			}
+			else
+			{
+				/* treat like an unmountable disk (cf. GetCurrentRoot
+				 * nrd_error) */
+				FreeBufmem (rootblock, g);
+				g->disktype = ID_NOT_REALLY_DOS;
+				CreateInputEvent (TRUE, g);
+				g->currentvolume = NULL;
+			}
 		}
 	}
 	else
@@ -324,6 +341,13 @@ static void DiskRemoveSequence(globaldata *g)
 	{
 		RequestCurrentVolumeBack(g);
 		UpdateDisk(g);
+		/* If the update failed even with the volume back, the changes
+		 * cannot be saved. Drop them explicitly (UpdateDisk keeps
+		 * g->dirty set on failure) so the volume can be removed on the
+		 * next change event instead of requesting the volume back
+		 * forever.
+		 */
+		g->dirty = FALSE;
 		return;
 	}
 
@@ -392,6 +416,9 @@ static void DiskInsertSequence(struct rootblock *rootblock, globaldata *g)
   SIPTR locklist;
 
 	ENTER("DiskInsertSequence");
+
+	/* fresh volume: report update failures anew */
+	g->updatefailshown = FALSE;
 
 	/* -I- Search new disk in volumelist */
 
@@ -601,7 +628,13 @@ struct volumedata *MakeVolumeData (struct rootblock *rootblock, globaldata *g)
 	volume->diskstate       = ID_VALIDATED;
 
 	/* these could be put in rootblock @@ see also HD version */
-	volume->numblocks       = g->geom->dg_TotalSectors >> g->blocklogshift;
+	/* usable blocks, accounting for the alignment of the partition
+	 * start to the logical block size (SetPartitionLimits): with an
+	 * unaligned partition, dg_TotalSectors >> blocklogshift counts one
+	 * block too many, and the allocator would hand out a phantom block
+	 * beyond g->lastblock.
+	 */
+	volume->numblocks       = g->lastblock - g->firstblock + 1;
 	volume->bytesperblock   = BLOCKSIZE;
 	volume->rescluster      = rootblock->reserved_blksize / volume->bytesperblock;
 
@@ -976,7 +1009,12 @@ static void GetExtBlockGeometry(struct rootblock *rootblock, ULONG rblsize, glob
 		return;
 
 	rext = AllocBufmemR(rblsize << BLOCKSHIFT, g);
-	if (RawRead((UBYTE *)rext, rblsize, rootblock->extension, g) != 0) {
+	/* RawRead returns 0 on success. Apply the stored geometry only if the
+	 * extension block was actually read and is valid; a failed read must
+	 * not touch the DosEnvec (the buffer contents are undefined then).
+	 */
+	if (RawRead((UBYTE *)rext, rblsize, rootblock->extension, g) == 0 &&
+		rext->id == EXTENSIONID && rext->dosenvec[1] != 0) {
 		int minlen = env[0] > rext->dosenvec[0] ? rext->dosenvec[0] : env[0];
 		if (minlen > 10)
 			minlen = 10; // de_SizeBlock to de_HighCyl
@@ -1133,10 +1171,25 @@ static BOOL GetCurrentRoot(struct rootblock **rootblock, globaldata *g)
 		goto nrd_error;
 	}
 
-	if (!InitLRU(g, rbp->reserved_blksize))
+	/* reserved_blksize must be a power of two, at least the logical
+	 * block size and at most 4096; anything else breaks the
+	 * rescluster arithmetic (rescluster 0 -> division by zero) and
+	 * the reserved-block cache
+	 */
+	if (rbp->reserved_blksize < BLOCKSIZE || rbp->reserved_blksize > 4096 ||
+		(rbp->reserved_blksize & (rbp->reserved_blksize - 1)))
 	{
 		goto nrd_error;
 	}
+
+	/* NOTE: InitLRU is deliberately NOT called here. GetCurrentRoot may
+	 * run while another volume is still current and dirty (disk swap,
+	 * RequestCurrentVolumeBack polling): reinitializing the LRU for a
+	 * different reserved block size would free that volume's cached
+	 * blocks - including dirty ones - and its update would then write
+	 * from freed memory. NewVolume calls InitLRU after the old volume
+	 * has been removed.
+	 */
 
 	FreeBufmem(rbpt, g);
 	*rootblock = AllocBufmemR (rblsize << BLOCKSHIFT, g);
@@ -1201,7 +1254,16 @@ static void SetPartitionLimits(globaldata *g)
 		return;	
 
 	g->firstblocknative = g->dosenvec->de_LowCyl * g->geom->dg_CylSectors;
-	g->lastblocknative = (g->dosenvec->de_HighCyl + 1) * g->geom->dg_CylSectors;
+	/* saturate instead of wrapping at 2^32 sectors (2TB with 512-byte
+	 * sectors): a wrapped end made lastblock ~0xFFFFFFFF, which
+	 * disabled the partition bounds checks entirely (losing the last
+	 * partial block by saturating is the safe direction)
+	 */
+	if (g->geom->dg_CylSectors &&
+		(g->dosenvec->de_HighCyl + 1) > 0xFFFFFFFFUL / g->geom->dg_CylSectors)
+		g->lastblocknative = 0xFFFFFFFFUL;
+	else
+		g->lastblocknative = (g->dosenvec->de_HighCyl + 1) * g->geom->dg_CylSectors;
 	// Align to block size if partition was not already block size aligned.
 	// Pre OS3.2 HDToolbox versions only guarantee up to 2 block alignment.
 	g->firstblocknative += (1 << g->blocklogshift) - 1;
@@ -1247,18 +1309,26 @@ void CalculateBlockSize(globaldata *g, ULONG spb, ULONG blocksize)
 	if (!blocksize)
 	{
 		blocksize = bs * spb;
-		if (blocksize >= 4096)
-		{
-			blocksize = 4096;
-		} else if (blocksize >= 2048)
-		{
-			blocksize = 2048;
-		}
-		if (blocksize < bs)
-		{
-			blocksize = bs;
-		}
-	}	
+	}
+	/* Normalize to a power of two (round down), at least the physical
+	 * sector size, at most 4096. A non-power-of-two size (e.g.
+	 * DE_SECSPERBLK = 3) would yield mutually inconsistent
+	 * blockshift/blocklogshift values: the trackdisk and DirectSCSI
+	 * paths would then address different physical sectors for the same
+	 * logical block.
+	 */
+	if (blocksize >= 4096)
+		blocksize = 4096;
+	else if (blocksize >= 2048)
+		blocksize = 2048;
+	else if (blocksize >= 1024)
+		blocksize = 1024;
+	else
+		blocksize = 512;
+	if (blocksize < bs)
+	{
+		blocksize = bs;
+	}
     g->blocksize_phys = bs;
     g->blocksize = blocksize;
     g->blocklogshift = 0;

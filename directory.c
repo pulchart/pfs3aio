@@ -310,11 +310,11 @@ static BOOL DeleteLink(struct fileinfo *link, SIPTR *, globaldata * g);
 static BOOL RemapLinks(struct fileinfo *object, globaldata * g);
 static void UpdateLinkDir(struct direntry *object, ULONG newdiran, globaldata * g);
 static void MoveLink(struct direntry *object, ULONG newdiran, globaldata *g);
-static void RenameAcrossDirs(struct fileinfo from, struct direntry *to, union objectinfo *destdir, struct fileinfo *result, globaldata * g);
-static void RenameWithinDir(struct fileinfo from, struct direntry *to, struct fileinfo *newinfo, globaldata * g);
 static void RenameInPlace(struct fileinfo from, struct direntry *to, struct fileinfo *result, globaldata * g);
 static struct direntry *CheckFit(struct cdirblock *blok, int needed, globaldata * g);
 static BOOL MoveToPrevious(struct fileinfo de, struct direntry *to, struct fileinfo *result, globaldata * g);
+static BOOL RenameWithinDir(struct fileinfo from, struct direntry *to, struct fileinfo *result, globaldata * g);
+static BOOL RenameAcrossDirs(struct fileinfo from, struct direntry *to, union objectinfo *destdir, struct fileinfo *result, globaldata * g);
 static void RemoveDirEntry(struct fileinfo info, globaldata * g);
 static BOOL AddDirectoryEntry(union objectinfo *dir, struct direntry *newentry, struct fileinfo *newinfo, globaldata * g);
 static void UpdateChangedRef(struct fileinfo from, struct fileinfo *to, int diff, globaldata * g);
@@ -1581,7 +1581,8 @@ ULONG NewFile (BOOL found, union objectinfo *directory, STRPTR filename, union o
 		GetExtraFields(info.file.direntry, &extrafields);
 		extrafields.virtualsize = extrafields.rollpointer = 0;
 		AddExtraFields(destentry, &extrafields);
-		ChangeDirEntry(info.file, destentry, directory, &info.file, g);
+		if (!ChangeDirEntry(info.file, destentry, directory, &info.file, g))
+			return ERROR_DISK_FULL;
 		newfile->file = info.file;
 		return 0;
 	}
@@ -2126,7 +2127,11 @@ BOOL RenameAndMove (union objectinfo *sourcedi, union objectinfo *srcinfo,
 	 * Makes srcinfo INVALID
 	 */
 	PFSDoNotify(&srcinfo->file, TRUE, g);
-	ChangeDirEntry(srcinfo->file, destentry, &destdi, &destinfo.file, g);   // output:destinfo
+	if (!ChangeDirEntry(srcinfo->file, destentry, &destdi, &destinfo.file, g))   // output:destinfo
+	{
+		*error = ERROR_DISK_FULL;
+		return DOSFALSE;
+	}
 
 	/* Update linklist and notify source if object moved across dirs
 	 */
@@ -2236,7 +2241,11 @@ BOOL AddComment(union objectinfo * info, STRPTR comment, SIPTR *error, globaldat
 		return DOSFALSE;
 	else
 	{
-		ChangeDirEntry(info->file, destentry, &directory, &info->file, g);
+		if (!ChangeDirEntry(info->file, destentry, &directory, &info->file, g))
+		{
+			*error = ERROR_DISK_FULL;
+			return DOSFALSE;
+		}
 		return DOSTRUE;
 	}
 }
@@ -2309,8 +2318,11 @@ BOOL ProtectFile(struct fileinfo * file, ULONG protection, SIPTR *error, globald
 		/* commit changes */
 		if (!GetParent((union objectinfo *)file, &directory, error, g))
 			return DOSFALSE;
-		else
-			ChangeDirEntry(*file, destentry, &directory, file, g);
+		else if (!ChangeDirEntry(*file, destentry, &directory, file, g))
+		{
+			*error = ERROR_DISK_FULL;
+			return DOSFALSE;
+		}
 	}
 
 	/* mark block for update and return success */
@@ -2373,8 +2385,11 @@ BOOL SetOwnerID(struct fileinfo * file, ULONG owner, SIPTR *error, globaldata * 
 	/* commit changes */
 	if (!GetParent((union objectinfo *)file, &directory, error, g))
 		return DOSFALSE;
-	else
-		ChangeDirEntry(*file, destentry, &directory, file, g);
+	else if (!ChangeDirEntry(*file, destentry, &directory, file, g))
+	{
+		*error = ERROR_DISK_FULL;
+		return DOSFALSE;
+	}
 
 	MakeBlockDirty((struct cachedblock *)file->dirblock, g);
 	return DOSTRUE;
@@ -2714,7 +2729,13 @@ BOOL CreateLink(union objectinfo * linkdir, STRPTR linkname, union objectinfo * 
 		if (!GetParent(object, &odi, error, g))
 			return DOSFALSE;    /* serious! should not happen */
 
-		ChangeDirEntry(object->file, destentry, &odi, &object->file, g);
+		if (!ChangeDirEntry(object->file, destentry, &odi, &object->file, g))
+		{
+			/* like the GetParent failure above: the new link entry
+			 * stays, but the operation is reported as failed */
+			*error = ERROR_DISK_FULL;
+			return DOSFALSE;
+		}
 	}
 	else
 	{
@@ -2944,9 +2965,9 @@ ULONG SetRollover(fileentry_t *rollfile, struct rolloverinfo *roinfo, globaldata
 
 		if (!GetParent(&rollfile->le.info, &directory, &error, g))
 			return error;
-		else
-			ChangeDirEntry(rollfile->le.info.file, destde, &directory,
-						   &rollfile->le.info.file, g);
+		else if (!ChangeDirEntry(rollfile->le.info.file, destde, &directory,
+						   &rollfile->le.info.file, g))
+			return ERROR_DISK_FULL;
 	}
 	else
 	{
@@ -2978,57 +2999,63 @@ ULONG SetRollover(fileentry_t *rollfile, struct rolloverinfo *roinfo, globaldata
  * from can become INVALID..
  */
 
-void ChangeDirEntry(struct fileinfo from, struct direntry *to,
+BOOL ChangeDirEntry(struct fileinfo from, struct direntry *to,
 		   union objectinfo *destdir, struct fileinfo *result, globaldata * g)
 {
 	ULONG destanodenr = IsRoot(destdir) ? ANODE_ROOTDIR : FIANODENR(&destdir->file);
 
 	/* check whether a 'within dir' rename */
 	if (to && destanodenr == from.dirblock->blk.anodenr)
-		RenameWithinDir(from, to, result, g);
+		return RenameWithinDir(from, to, result, g);
 	else
-		RenameAcrossDirs(from, to, destdir, result, g);
+		return RenameAcrossDirs(from, to, destdir, result, g);
 }
 
 /*
  * Move a file from one dir to another
  * NULL = delete allowed
+ * Returns FALSE (with source intact and nothing added) if the new
+ * entry could not be added.
  */
-static void RenameAcrossDirs(struct fileinfo from, struct direntry *to,
+static BOOL RenameAcrossDirs(struct fileinfo from, struct direntry *to,
 		   union objectinfo *destdir, struct fileinfo *result, globaldata * g)
 {
 	UWORD removedlen;
 
-	/* remove old entry (invalidates 'destdir') */
-	removedlen = from.direntry->next;
-	RemoveDirEntry(from, g);
+	/* may not be evicted while AddDirectoryEntry loads other blocks */
+	LOCK(from.dirblock);
+
 	if (to)
 	{
-		/* test on volume is not necessary, because file.dirblock = volume.volume !=
-		 * from.dirblock
-		 * restore 'destdir' (can be invalidated by RemoveDirEntry)
+		/* Add the new entry BEFORE removing the old one: if adding
+		 * fails (e.g. no reserved block for a fresh dirblock), the
+		 * source entry is still present and the operation fails
+		 * cleanly instead of orphaning the object and leaving
+		 * 'result' uninitialized. Source and destination directory are
+		 * different, so 'destdir' cannot be invalidated by the removal
+		 * below.
 		 */
-		if (destdir->file.dirblock == from.dirblock &&
-			destdir->file.direntry > from.direntry)
-		{
-			destdir->file.direntry = (struct direntry *)
-				((UBYTE *)destdir->file.direntry - removedlen);
-		}
-
-		/* add new entry */
-		AddDirectoryEntry(destdir, to, result, g);
+		if (!AddDirectoryEntry(destdir, to, result, g))
+			return FALSE;
 	}
+
+	/* remove old entry */
+	removedlen = from.direntry->next;
+	RemoveDirEntry(from, g);
 
 	UpdateChangedRef(from, result, -removedlen, g);
 	if (result)
 		LOCK(result->dirblock);
+	return TRUE;
 }
 
 /*
  * Rename file within dir
  * NULL destination not allowed
+ * Returns FALSE (with the source entry still present, though possibly
+ * moved within the directory) if space could not be made.
  */
-static void RenameWithinDir(struct fileinfo from, struct direntry *to,
+static BOOL RenameWithinDir(struct fileinfo from, struct direntry *to,
 							struct fileinfo *result, globaldata * g)
 {
 	int spaceneeded;
@@ -3047,16 +3074,21 @@ static void RenameWithinDir(struct fileinfo from, struct direntry *to,
 		while (!CheckFit(from.dirblock, spaceneeded, g) && from.direntry != mover.direntry)
 		{
 			from.direntry = (struct direntry *)((UBYTE *)from.direntry - mover.direntry->next);
-			MoveToPrevious(mover, mover.direntry, result, g);
+			if (!MoveToPrevious(mover, mover.direntry, result, g))
+				return FALSE;
 		}
 
 		if (CheckFit(from.dirblock, spaceneeded, g))
 			RenameInPlace(from, to, result, g);
 		else
-			MoveToPrevious(from, to, result, g);
+		{
+			if (!MoveToPrevious(from, to, result, g))
+				return FALSE;
+		}
 	}
 
 	LOCK(result->dirblock);
+	return TRUE;
 }
 
 
@@ -3138,6 +3170,7 @@ static BOOL MoveToPrevious(struct fileinfo de, struct direntry *to, struct filei
 		ULONG parent;
 		struct canode newanode;
 		struct cdirblock *newblock;
+		ULONG newanodenr;
 
 		newanode.clustersize = 1;
 		parent = de.dirblock->blk.parent;
@@ -3147,18 +3180,48 @@ static BOOL MoveToPrevious(struct fileinfo de, struct direntry *to, struct filei
 		if (!prev)
 		{
 			GetAnode(&anode, de.dirblock->blk.anodenr, g);
+			if (!(newanodenr = AllocAnode (anode.next ? anode.next : anode.nr, g)))
+			{
+				FreeReservedBlock (newanode.blocknr, g);
+				return FALSE;
+			}
 			newanode.nr = anode.nr;
-			newanode.next = anode.nr = AllocAnode (anode.next ? anode.next : anode.nr, g);
+			newanode.next = anode.nr = newanodenr;
 		}
 		else
 		{
-			newanode.nr = AllocAnode (anode.nr, g);
+			if (!(newanodenr = AllocAnode (anode.nr, g)))
+			{
+				FreeReservedBlock (newanode.blocknr, g);
+				return FALSE;
+			}
+			newanode.nr = newanodenr;
 			newanode.next = anode.next;
 			anode.next = newanode.nr;
 		}
 
 		SaveAnode(&anode, anode.nr, g);
 		newblock = MakeDirBlock(newanode.blocknr, newanode.nr, de.dirblock->blk.anodenr, parent, g);
+		if (!newblock)
+		{
+			/* undo the chain changes: the head anode itself was not
+			 * rewritten yet (newanode is saved only after MakeDirBlock)
+			 */
+			if (!prev)
+			{
+				/* the old head contents were copied to newanodenr;
+				 * the head anode still has its original contents */
+				FreeAnode (newanodenr, g);
+			}
+			else
+			{
+				anode.next = newanode.next;
+				SaveAnode(&anode, anode.nr, g);
+				FreeAnode (newanodenr, g);
+			}
+			FreeReservedBlock (newanode.blocknr, g);
+			return FALSE;
+		}
 		SaveAnode(&newanode, newanode.nr, g);   /* MUST be done AFTER MakeDirBlock */
 
 		/* add entry */
@@ -3308,6 +3371,12 @@ static BOOL AddDirectoryEntry(union objectinfo *dir, struct direntry *newentry,
 		}
 	}
 
+	/* a dirblock in the chain could not be loaded: fail (adding the
+	 * entry to a truncated view of the directory could corrupt it)
+	 */
+	if (!done && !eof)
+		return FALSE;
+
 	/* no->new dirblock (eof <=> anode is end of chain)
 	 * We will make the new dirblock at the >start< of
 	 * the chain.
@@ -3317,20 +3386,36 @@ static BOOL AddDirectoryEntry(union objectinfo *dir, struct direntry *newentry,
 	{
 		ULONG parent;
 		struct canode newanode;
+		ULONG newanodenr;
 
 		newanode.clustersize = 1;
 		parent = blok->blk.parent;
 		if (!(newanode.blocknr = AllocReservedBlock(g)))
 			return FALSE;
 		GetAnode (&anode, diranodenr, g);
+		if (!(newanodenr = AllocAnode (anode.next ? anode.next : anode.nr, g)))
+		{
+			FreeReservedBlock (newanode.blocknr, g);
+			return FALSE;
+		}
 		newanode.nr = diranodenr;
-		newanode.next = anode.nr = AllocAnode (anode.next ? anode.next : anode.nr, g);
+		newanode.next = anode.nr = newanodenr;
 		SaveAnode(&anode, anode.nr, g);
 		blok = MakeDirBlock (newanode.blocknr, newanode.nr, diranodenr, parent, g);
+		if (!blok)
+		{
+			/* the old head contents were saved under newanodenr, but
+			 * the head anode (diranodenr) itself is unchanged - just
+			 * discard the copy
+			 */
+			FreeAnode (newanodenr, g);
+			FreeReservedBlock (newanode.blocknr, g);
+			return FALSE;
+		}
 		SaveAnode (&newanode, newanode.nr, g);
 		entry = (struct direntry *)&blok->blk.entries;
 		memcpy(entry, newentry, newentry->next);
-		*(UBYTE *)NEXTENTRY(entry) = 0;     // mark end of dirblock 
+		*(UBYTE *)NEXTENTRY(entry) = 0;     // mark end of dirblock
 
 	}
 
@@ -3730,11 +3815,16 @@ void UpdateLinks(struct direntry *object, globaldata * g)
 	linknr = extrafields.link;
 	while (linknr)
 	{
-		/* Update link: get link object info and update size */
+		/* Update link: get link object info and update size.
+		 * Skip dangling nodes (link direntry not found) instead of
+		 * writing through an uninitialized objectinfo.
+		 */
 		GetAnode(&linklist, linknr, g);
-		FetchObject(linklist.blocknr, linklist.nr, &loi, g);
-		loi.file.direntry->fsize = object->fsize;
-		MakeBlockDirty((struct cachedblock *)loi.file.dirblock, g);
+		if (FetchObject(linklist.blocknr, linklist.nr, &loi, g))
+		{
+			loi.file.direntry->fsize = object->fsize;
+			MakeBlockDirty((struct cachedblock *)loi.file.dirblock, g);
+		}
 		linknr = linklist.next;
 	}
 }
@@ -3756,8 +3846,15 @@ static BOOL DeleteLink(struct fileinfo *link, SIPTR *error, globaldata * g)
 	/* delete old entry */
 	ChangeDirEntry(*link, NULL, NULL, NULL, g);
 
-	/* get object */
-	FetchObject(linknode.clustersize, extrafields.link, &object, g);
+	/* get object. If the master is not found (chain was already
+	 * inconsistent), just discard the link node instead of operating
+	 * on an uninitialized objectinfo.
+	 */
+	if (!FetchObject(linknode.clustersize, extrafields.link, &object, g))
+	{
+		FreeAnode(linknode.nr, g);
+		return DOSTRUE;
+	}
 	GetExtraFields(object.file.direntry, &extrafields);
 
 	/* if the object lists our link as the first link, redirect it to the next one */
@@ -3771,18 +3868,26 @@ static BOOL DeleteLink(struct fileinfo *link, SIPTR *error, globaldata * g)
 			return DOSFALSE;	// should never happen
 		}
 		else {
-			ChangeDirEntry(object.file, (struct direntry *)entrybuffer, &directory, &object.file, g);
+			if (!ChangeDirEntry(object.file, (struct direntry *)entrybuffer, &directory, &object.file, g))
+			{
+				*error = ERROR_DISK_FULL;
+				return DOSFALSE;
+			}
 		}
 	}
 	/* otherwise simply remove the link from the list of links */
 	else
 	{
 		GetAnode(&linklist, extrafields.link, g);
-		while (linklist.next != linknode.nr)
+		while (linklist.next != linknode.nr && linklist.next)
 			GetAnode(&linklist, linklist.next, g);
 
-		linklist.next = linknode.next;
-		SaveAnode(&linklist, linklist.nr, g);
+		if (linklist.next == linknode.nr)
+		{
+			linklist.next = linknode.next;
+			SaveAnode(&linklist, linklist.nr, g);
+		}
+		/* else: our node was not in the chain (already inconsistent) */
 	}
 
 	FreeAnode(linknode.nr, g);
@@ -3812,12 +3917,22 @@ static BOOL RemapLinks(struct fileinfo *object, globaldata * g)
 
 	/* the file has links; get head of list
 	 * we are going to promote this link to
-	 * an object 
+	 * an object. Dangling nodes (no direntry found) are discarded.
 	 */
-	GetAnode(&linknode, extrafields.link, g);
+	{
+		ULONG linknr = extrafields.link;
 
-	/* get direntry belonging to this linknode */
-	FetchObject(linknode.blocknr, linknode.nr, &link, g);
+		for (;;)
+		{
+			GetAnode(&linknode, linknr, g);
+			if (FetchObject(linknode.blocknr, linknode.nr, &link, g))
+				break;
+			linknr = linknode.next;
+			FreeAnode(linknode.nr, g);
+			if (!linknr)
+				return FALSE;   /* no valid link to promote */
+		}
+	}
 
 	/* Promote it from link to object */
 	destentry = (struct direntry *)entrybuffer;
@@ -3837,14 +3952,15 @@ static BOOL RemapLinks(struct fileinfo *object, globaldata * g)
 	ChangeDirEntry(*object, NULL, NULL, NULL, g);
 
 	/* Refetch new head (can have become invalid) */
-	FetchObject(linknode.blocknr, linknode.nr, &link, g);
-	if (GetParent(&link, &directory, &error, g))
-		ChangeDirEntry(link.file, destentry, &directory, &link.file, g);
-
-	/* object directory has changed; update link chain
-	 * new directory is the old chain head was in: linknode.linkdir (== linknode.blocknr)
-	 */
-	UpdateLinkDir(link.file.direntry, linknode.blocknr, g);
+	if (FetchObject(linknode.blocknr, linknode.nr, &link, g) &&
+		GetParent(&link, &directory, &error, g) &&
+		ChangeDirEntry(link.file, destentry, &directory, &link.file, g))
+	{
+		/* object directory has changed; update link chain
+		 * new directory is the old chain head was in: linknode.linkdir (== linknode.blocknr)
+		 */
+		UpdateLinkDir(link.file.direntry, linknode.blocknr, g);
+	}
 	return TRUE;
 }
 
@@ -4015,6 +4131,8 @@ static BOOL BlockTaken(struct canode *anode, globaldata * g)
 	{
 		/* get first bitmapblock */
 		bitmap = GetBitmapBlock(bmseqnr, g);
+		if (!bitmap)
+			return TRUE;    /* unreadable bitmap: assume taken (safe) */
 
 		/* check all blocks */
 		while (bmoffset < alloc_data.longsperbmb)
@@ -4481,10 +4599,14 @@ ULONG SetDeldir(int nbr, globaldata *g)
 		// i.p.v. FreeLRU((struct cachedblock *)ddblk, g);
 	}
 
-	/* free unwanted deldir blocks */
+	/* free unwanted deldir blocks. ResToBeFreed, not FreeReservedBlock:
+	 * the committed rootblockextension still references these blocks
+	 * until the next update, so they must not become allocatable before
+	 * that update's rootblock write (state overlap)
+	 */
 	for (i = nbr; i < rext->blk.deldirsize; i++)
 	{
-		FreeReservedBlock(rext->blk.deldir[i], g);
+		ResToBeFreed(rext->blk.deldir[i], g);
 		rext->blk.deldir[i] = 0;
 	}
 

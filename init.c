@@ -245,6 +245,17 @@ Removed because of problems with Phase 5 boards
 
 	CalculateBlockSize(g, 0, 0);
 
+	/* refuse mountlists whose sector size is not a power of two (the
+	 * block size itself is normalized by CalculateBlockSize, but it can
+	 * not be smaller than the sector size)
+	 */
+	if (g->blocksize_phys < 512 ||
+		(g->blocksize_phys & (g->blocksize_phys - 1)) ||
+		(g->blocksize & (g->blocksize - 1)))
+	{
+		return FALSE;
+	}
+
 	if (!(g->geom = AllocMemP (sizeof(struct DriveGeometry), g)))
 		return FALSE;
 

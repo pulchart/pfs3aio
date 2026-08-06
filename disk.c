@@ -212,7 +212,8 @@ static int CachedRead(ULONG blocknr, SIPTR *error, BOOL fake, globaldata *g);
 static UBYTE *CachedReadD(ULONG blknr, SIPTR *err, globaldata *g);
 static int CachedWrite(UBYTE *data, ULONG blocknr, globaldata *g);
 static void ValidateCache(ULONG blocknr, ULONG numblocks, enum vctype, globaldata *g);
-static void UpdateSlot(int slotnr, globaldata *g);
+static ULONG UpdateSlot(int slotnr, globaldata *g);
+static int GetFreeSlot(SIPTR *error, globaldata *g);
 static ULONG ReadFromRollover(fileentry_t *file, UBYTE *buffer, ULONG size, SIPTR *error, globaldata *g);
 static ULONG WriteToRollover(fileentry_t *file, UBYTE *buffer, ULONG size, SIPTR *error, globaldata *g);
 static SFSIZE SeekInRollover(fileentry_t *file, SFSIZE offset, LONG mode, SIPTR *error, globaldata *g);
@@ -870,6 +871,8 @@ static ULONG WriteToFile(fileentry_t *file, UBYTE *buffer, ULONG size,
 			{
 				/* for one block no offset growing file */
 				slotnr = CachedRead(chnode->an.blocknr + anodeoffset, error, TRUE, g);
+				if (*error)
+					goto wtf_error;
 			}
 
 			/* copy data to cache and mark block as dirty */
@@ -1236,9 +1239,40 @@ static int CheckDataCache(ULONG blocknr, globaldata *g)
 	return -1;
 }
 
+/* find a cache slot for a new block: use the roving victim, writing it
+ * out first if it is dirty. If that write fails the victim must not be
+ * discarded (its contents exist nowhere else); fall back to any clean
+ * slot. Returns -1 (with *error set to the write error) if the whole
+ * cache is dirty and unwritable.
+ */
+static int GetFreeSlot(SIPTR *error, globaldata *g)
+{
+	int i, j;
+	ULONG err;
+
+	*error = 0;
+	i = g->dc.roving;
+	g->dc.roving = (g->dc.roving+1)&g->dc.mask;
+	if (!(g->dc.ref[i].dirty && g->dc.ref[i].blocknr))
+		return i;
+	err = UpdateSlot(i, g);
+	if (!err)
+		return i;
+	for (j = (i+1)&g->dc.mask; j != i; j = (j+1)&g->dc.mask)
+	{
+		if (!(g->dc.ref[j].dirty && g->dc.ref[j].blocknr))
+		{
+			g->dc.roving = (j+1)&g->dc.mask;
+			return j;
+		}
+	}
+	*error = (SIPTR)err;
+	return -1;
+}
+
 /* get block from cache or put it in cache if it wasn't
- * there already. return cache slotnr. errors are indicated by 'error'
- * (null = ok)
+ * there already. return cache slotnr, or -1 if no cache slot could be
+ * made available. errors are indicated by 'error' (null = ok)
  */
 static int CachedRead(ULONG blocknr, SIPTR *error, BOOL fake, globaldata *g)
 {
@@ -1247,15 +1281,27 @@ static int CachedRead(ULONG blocknr, SIPTR *error, BOOL fake, globaldata *g)
 	*error = 0;
 	i = CheckDataCache(blocknr, g);
 	if (i != -1) return i;
-	i = g->dc.roving;
-	if (g->dc.ref[i].dirty && g->dc.ref[i].blocknr)
-		UpdateSlot(i, g);
+	i = GetFreeSlot(error, g);
+	if (i == -1)
+		return -1;
 
 	if (fake)
 		memset(&g->dc.data[i<<BLOCKSHIFT], 0xAA, BLOCKSIZE);
 	else
+	{
 		*error = RawRead(&g->dc.data[i<<BLOCKSHIFT], 1, blocknr, g);
-	g->dc.roving = (g->dc.roving+1)&g->dc.mask;
+		if (*error)
+		{
+			/* Do not tag the slot with this blocknr: a later cache hit
+			 * would return the garbage contents as valid data, and
+			 * read-modify-write of partial blocks would merge user data
+			 * into garbage and write it back.
+			 */
+			g->dc.ref[i].dirty = 0;
+			g->dc.ref[i].blocknr = 0;
+			return i;
+		}
+	}
 	g->dc.ref[i].dirty = 0;
 	g->dc.ref[i].blocknr = blocknr;
 	return i;
@@ -1273,19 +1319,20 @@ static UBYTE *CachedReadD(ULONG blknr, SIPTR *err, globaldata *g)
 }
 
 /* write block in cache. if block was already cached,
- * overwrite it. return slotnr (never fails).
+ * overwrite it. return slotnr, or -1 if no cache slot could be made
+ * available (cache full of dirty, unwritable data).
  */
 static int CachedWrite(UBYTE *data, ULONG blocknr, globaldata *g)
 {
 	int i;
+	SIPTR error;
 
 	i = CheckDataCache(blocknr, g);
 	if (i == -1)
 	{
-		i = g->dc.roving;
-		g->dc.roving = (g->dc.roving+1)&g->dc.mask;
-		if (g->dc.ref[i].dirty && g->dc.ref[i].blocknr)
-			UpdateSlot(i, g);
+		i = GetFreeSlot(&error, g);
+		if (i == -1)
+			return -1;
 	}
 	memcpy(&g->dc.data[i<<BLOCKSHIFT], data, BLOCKSIZE);
 	g->dc.ref[i].dirty = 1;
@@ -1304,25 +1351,34 @@ void FlushDataCache(globaldata *g)
 		g->dc.ref[i].blocknr = 0;
 }
 
-/* write all dirty blocks to disk
+/* write all dirty blocks to disk. returns 0 if all were written, else
+ * an errornr (the remaining slots stay dirty and are retried later).
  */
-void UpdateDataCache(globaldata *g)
+ULONG UpdateDataCache(globaldata *g)
 {
+	ULONG error = 0, err;
 	int i;
 
 	for (i=0; i<g->dc.size; i++)
 		if (g->dc.ref[i].dirty && g->dc.ref[i].blocknr)
-			UpdateSlot (i, g);
+			if ((err = UpdateSlot (i, g)))
+				error = err;
+	return error;
 }
 
 
-/* update a data cache slot, and any adjacent blocks
+/* update a data cache slot, and any adjacent blocks.
+ * result: errornr, 0 = ok. The dirty flags are only cleared when the
+ * write succeeded; on failure the data stays in the cache (still
+ * dirty) and g->dirty is set so a retry is scheduled - the write may
+ * have been reported successful to the application already.
  */
-static void UpdateSlot(int slotnr, globaldata *g)
+static ULONG UpdateSlot(int slotnr, globaldata *g)
 {
 	ULONG blocknr;
+	ULONG error;
 	int i;
-	
+
 	blocknr = g->dc.ref[slotnr].blocknr;
 
 	/* find out how many adjacent blocks can be written */
@@ -1330,11 +1386,20 @@ static void UpdateSlot(int slotnr, globaldata *g)
 	{
 		if (g->dc.ref[i].blocknr != blocknr++)
 			break;
-		g->dc.ref[i].dirty = 0;
 	}
 
 	/* write them */
-	RawWrite(&g->dc.data[slotnr<<BLOCKSHIFT], i-slotnr, g->dc.ref[slotnr].blocknr, g);
+	error = RawWrite(&g->dc.data[slotnr<<BLOCKSHIFT], i-slotnr, g->dc.ref[slotnr].blocknr, g);
+	if (!error)
+	{
+		while (--i >= slotnr)
+			g->dc.ref[i].dirty = 0;
+	}
+	else
+	{
+		g->dirty = TRUE;
+	}
+	return error;
 }
 
 /* update cache to reflect blocks read to or written
@@ -1384,7 +1449,8 @@ static void ValidateCache(ULONG blocknr, ULONG numblocks, enum vctype vctype, gl
 ULONG DiskRead(UBYTE *buffer, ULONG blockstoread, ULONG blocknr, globaldata *g)
 {
 	SIPTR error;
-	int slotnr;
+	ULONG rawerror;
+	int slotnr, i;
 
 	DB(Trace(1, "DiskRead", "%ld blocks from %ld firstblock %ld\n",
 		 (ULONG)blockstoread, (ULONG)blocknr, g->firstblock));
@@ -1397,11 +1463,35 @@ ULONG DiskRead(UBYTE *buffer, ULONG blockstoread, ULONG blocknr, globaldata *g)
 	if (blockstoread == 1)
 	{
 		slotnr = CachedRead(blocknr, &error, FALSE, g);
-		memcpy(buffer, &g->dc.data[slotnr<<BLOCKSHIFT], BLOCKSIZE);
+		if (slotnr < 0)
+		{
+			/* no cache slot available (dirty, unwritable data):
+			 * bypass the cache */
+			return RawRead(buffer, 1, blocknr, g);
+		}
+		if (!error)
+			memcpy(buffer, &g->dc.data[slotnr<<BLOCKSHIFT], BLOCKSIZE);
 		return error;
 	}
 	ValidateCache(blocknr, blockstoread, read, g);
-	return RawRead(buffer, blockstoread, blocknr, g);
+	rawerror = RawRead(buffer, blockstoread, blocknr, g);
+	if (!rawerror)
+	{
+		/* overlay any still-dirty cached blocks in the range (their
+		 * flush in ValidateCache failed): the cache is newer than the
+		 * disk contents just read
+		 */
+		for (i=0; i<g->dc.size; i++)
+		{
+			if (g->dc.ref[i].dirty && g->dc.ref[i].blocknr >= blocknr &&
+				g->dc.ref[i].blocknr < blocknr + blockstoread)
+			{
+				memcpy(buffer + ((g->dc.ref[i].blocknr - blocknr)<<BLOCKSHIFT),
+					&g->dc.data[i<<BLOCKSHIFT], BLOCKSIZE);
+			}
+		}
+	}
+	return rawerror;
 }
 
 
@@ -1419,7 +1509,7 @@ ULONG DiskRead(UBYTE *buffer, ULONG blockstoread, ULONG blocknr, globaldata *g)
 */
 ULONG DiskWrite(UBYTE *buffer, ULONG blockstowrite, ULONG blocknr, globaldata *g)
 {
-	ULONG slotnr;
+	LONG slotnr;
 	ULONG error = 0;
 
 	DB(Trace(1, "DiskWrite", "%ld blocks from %ld + %ld\n", blockstowrite, blocknr,
@@ -1432,7 +1522,12 @@ ULONG DiskWrite(UBYTE *buffer, ULONG blockstowrite, ULONG blocknr, globaldata *g
 
 	if (blockstowrite == 1)
 	{
-		CachedWrite(buffer, blocknr, g);
+		if (CachedWrite(buffer, blocknr, g) < 0)
+		{
+			/* no cache slot available: write through directly so the
+			 * application gets the real result instead of a fake ok */
+			return RawWrite(buffer, 1, blocknr, g);
+		}
 		return 0;
 	}
 	ValidateCache(blocknr, blockstowrite, write, g);
@@ -1443,7 +1538,8 @@ ULONG DiskWrite(UBYTE *buffer, ULONG blockstowrite, ULONG blocknr, globaldata *g
 	{
 		buffer += ((blockstowrite-1)<<BLOCKSHIFT);
 		slotnr = CachedWrite(buffer, blocknr+blockstowrite-1, g);
-		g->dc.ref[slotnr].dirty = 0;    // we just wrote it
+		if (slotnr >= 0)
+			g->dc.ref[slotnr].dirty = 0;    // we just wrote it
 	}
 	return error;
 }
@@ -1549,6 +1645,8 @@ static ULONG RawReadWrite_DS(BOOL write, UBYTE *buffer, ULONG blocks, ULONG bloc
 {
 	UBYTE cmdbuf[10];
 	ULONG transfer, maxtransfer;
+	UBYTE *io_buffer;
+	ULONG io_blocks, io_blocknr;
 
 	if(blocknr == (ULONG)-1)   // blocknr of uninitialised anode
 		return 1;
@@ -1561,33 +1659,46 @@ retry:
 	if (!BoundsCheck(write, blocknr, blocks, g))
 		return ERROR_SEEK_ERROR;
 
-	/* chop in maxtransfer chunks */
-	maxtransfer = min(g->maxtransfermax, g->dosenvec->de_MaxTransfer) >> BLOCKSHIFT;
+	/* chop in maxtransfer chunks. maxtransfer is in NATIVE sectors
+	 * (the transfer loop below works in native sectors): computing it
+	 * in fs blocks made every transfer fail with ERROR_BAD_NUMBER when
+	 * MaxTransfer < 8 fs blocks (e.g. 0x4000 with 4K blocks), and
+	 * needlessly limited chunks to 1/2^blocklogshift of MaxTransfer.
+	 * The ~7 alignment keeps chunks a multiple of the logical block
+	 * size (blocklogshift <= 3).
+	 */
+	maxtransfer = min(g->maxtransfermax, g->dosenvec->de_MaxTransfer) >> BLOCKNATIVESHIFT;
 	maxtransfer = min(65535, maxtransfer); // SCSI READ/WRITE(10) max transfer
 	maxtransfer &= ~7;
 	if (!maxtransfer) {
 		return ERROR_BAD_NUMBER;
 	}
-	blocks <<= g->blocklogshift;
-	blocknr <<= g->blocklogshift;
-	while (blocks > 0)
+	/* Convert to native blocks in work variables only, so that a retry
+	 * restarts from the unmodified arguments (like RawReadWrite_TD does).
+	 * Retrying with the loop variables would apply blocklogshift twice
+	 * and resume from a half-advanced position.
+	 */
+	io_buffer = buffer;
+	io_blocks = blocks << g->blocklogshift;
+	io_blocknr = blocknr << g->blocklogshift;
+	while (io_blocks > 0)
 	{
-		transfer = min(blocks, maxtransfer);
+		transfer = min(io_blocks, maxtransfer);
 		*((UWORD *)&cmdbuf[0]) = write ? 0x2a00 : 0x2800;
-		*((ULONG *)&cmdbuf[2]) = blocknr;
+		*((ULONG *)&cmdbuf[2]) = io_blocknr;
 		*((ULONG *)&cmdbuf[6]) = transfer << 8;
 		PROFILE_OFF();
-		if (!DoSCSICommand(buffer, transfer << BLOCKNATIVESHIFT, 0, cmdbuf, 10, write ? SCSIF_WRITE : SCSIF_READ, g))
+		if (!DoSCSICommand(io_buffer, transfer << BLOCKNATIVESHIFT, 0, cmdbuf, 10, write ? SCSIF_WRITE : SCSIF_READ, g))
 		{
 			PROFILE_ON();
-			if (ErrorRequest(write, g->scsicmd.scsi_Status, blocknr, transfer, g))
+			if (ErrorRequest(write, g->scsicmd.scsi_Status, io_blocknr, transfer, g))
 				goto retry;
 			return ERROR_NOT_A_DOS_DISK;
 		}
 		PROFILE_ON();
-		buffer += transfer << BLOCKNATIVESHIFT;
-		blocks -= transfer;
-		blocknr += transfer;
+		io_buffer += transfer << BLOCKNATIVESHIFT;
+		io_blocks -= transfer;
+		io_blocknr += transfer;
 	}
 
 	return 0;

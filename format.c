@@ -200,7 +200,10 @@ BOOL FDSFormat (DSTR diskname, LONG disktype, SIPTR *error, ULONG rsblocks, glob
 
 	// Only 512, 1024, 2048 and 4096 block sizes are supported.
 	// Last two require new large partition mode.
-	if (g->geom->dg_SectorSize < 512 || g->geom->dg_SectorSize > 4096 || cbs > 4096) { 
+	// Both sector size and logical block size must be powers of two.
+	if (g->geom->dg_SectorSize < 512 || g->geom->dg_SectorSize > 4096 || cbs > 4096 ||
+		(g->geom->dg_SectorSize & (g->geom->dg_SectorSize - 1)) ||
+		(cbs & (cbs - 1))) {
 		*error = ERROR_BAD_NUMBER;
 		return DOSFALSE;
 	}
@@ -453,7 +456,13 @@ static rootblock_t *MakeRootBlock (DSTR diskname, ULONG rsblocks, globaldata *g)
 	rbl->firstreserved = 2;
 	rbl->lastreserved = rescluster*numreserved + rbl->firstreserved - 1;
 	rbl->reserved_free = numreserved;
-	rbl->blocksfree = (g->geom->dg_TotalSectors >> g->blocklogshift) - rescluster*numreserved - rbl->firstreserved;
+	/* usable blocks = lastblock - firstblock + 1 (NOT
+	 * dg_TotalSectors >> blocklogshift, which counts one block too many
+	 * when the partition start is not aligned to the logical block
+	 * size; the bitmap would then contain a phantom block past the end
+	 * of the partition)
+	 */
+	rbl->blocksfree = (g->lastblock - g->firstblock + 1) - rescluster*numreserved - rbl->firstreserved;
 	rbl->alwaysfree = rbl->blocksfree/20;
 	// rbl->roving_ptr = 0;
 
@@ -598,11 +607,18 @@ static void MakeReservedBitmap (struct rootblock **rbl, ULONG numreserved, globa
 	for (i = 0; i<numreserved/32; i++)
 		*bitmap++ = ~0;
 
-	/* the last border */
-	last = 0;
-	for (i=0; i < numreserved%32; i++)
-		last |= 0x80000000>>i;
-	*bitmap = last;
+	/* the last border. Only written when a partial word exists:
+	 * numreserved is always a multiple of 32, and the unconditional
+	 * write went one ULONG past the allocation when the bitmap exactly
+	 * filled the rootblock cluster.
+	 */
+	if (numreserved % 32)
+	{
+		last = 0;
+		for (i=0; i < numreserved%32; i++)
+			last |= 0x80000000>>i;
+		*bitmap = last;
+	}
 
 	/* allocate taken blocks + rootblock extension (de + 1)
 	 * The reserved area starts with the rootblock.

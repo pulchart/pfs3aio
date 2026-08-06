@@ -6,7 +6,16 @@ CC=/opt/amiga/bin/m68k-amigaos-gcc
 
 LIBS=-nostdlib -lamiga -lgcc -lnix13 -lnix -s
 
-CFLAGS=-Os -fbbb=+ -m68000 -noixemul -fomit-frame-pointer -nostartfiles -mregparm=3 -msmall-code -s \
+# -fno-optimize-sibling-calls works around a code generation bug in
+# amiga-gcc 13.x with -mregparm=3: a sibling (tail) call to a function
+# whose 4th data argument is passed in the callee-saved register d2 is
+# emitted with the caller's d2 restored in the epilogue BEFORE the jump
+# and the argument never loaded at all. In this tree that miscompiles
+# the RawRead/RawWrite -> RawReadWrite_TD/_DS tail calls (5-argument
+# functions since the 2018 merge): every raw disk access gets blocknr=0.
+# amiga-gcc 6.x does not show this. Verified with a 25-line reproducer;
+# with this flag gcc emits the correct move.l d1,d2 + jsr sequence.
+CFLAGS=-Os -fbbb=+ -m68000 -noixemul -fomit-frame-pointer -nostartfiles -mregparm=3 -fno-optimize-sibling-calls -msmall-code -s \
 	-DMIN_LIB_VERSION=33 -DKSWRAPPER=1 \
 	-DSCSIDIRECT=1 -DNSD=1 -DTD64=1 -DTRACKDISK=1 \
 	-DLARGE_FILE_SIZE=0 -DEXTRAPACKETS=1 -DSIZEFIELD -DDELDIR=1 \

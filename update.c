@@ -202,7 +202,12 @@ BOOL UpdateDisk (globaldata *g)
 
 		g->uip = TRUE;
 		updateok = TRUE;
-		UpdateDataCache (g);            /* flush DiskRead DiskWrite cache */
+		/* flush DiskRead DiskWrite cache; if user data cannot be
+		 * written the commit is aborted (and retried later) rather
+		 * than committing metadata that references unwritten data
+		 */
+		if (UpdateDataCache (g))
+			updateok = FALSE;
 
 #if VERSION23
 		/* make sure rootblockextension is reallocated */
@@ -252,27 +257,55 @@ BOOL UpdateDisk (globaldata *g)
 #endif
 
 
-		/* commit reserved to be freed list */
-		CommitReservedToBeFreed(g);
-
 		/* update bitmap and bitmap index blocks */
 		updateok &= UpdateList ((struct cachedblock *)HeadOf(&volume->bmblks), g);
 		updateok &= UpdateList ((struct cachedblock *)HeadOf(&volume->bmindexblks), g);
 
-		/* update root (MUST be done last) */
+		/* update root (MUST be done last) - this is the commit point,
+		 * so its result must be checked as well
+		 */
+		if (updateok)
+			updateok = RawWrite((UBYTE *)volume->rootblk,
+				volume->rootblk->rblkcluster, ROOTBLOCK, g) == 0;
+
 		if (updateok)
 		{
-			RawWrite((UBYTE *)volume->rootblk, volume->rootblk->rblkcluster, ROOTBLOCK, g);
 			volume->rootblk->datestamp++;
 			volume->rootblockchangeflag = FALSE;
+
+			/* Now that the new rootblock is on disk, the old locations
+			 * of all reallocated reserved blocks are unreferenced and
+			 * may become allocatable. Committing the frees only after a
+			 * successful root write means the just-written reserved
+			 * bitmap is one commit conservative: a crash merely leaks
+			 * those blocks until the next successful update, instead of
+			 * risking reuse of blocks the on-disk root still references.
+			 */
+			CommitReservedToBeFreed(g);
+			CommitFreeList(g);
 
 			/* make sure update is really done */
 			UpdateAndMotorOff(g);
 			success = TRUE;
+			g->dirty = FALSE;
+			g->updatefailshown = FALSE;
 		}
 		else
 		{
-			ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+			/* The update did not complete: keep g->dirty set so the
+			 * timer/flush paths retry, and keep the queued reserved
+			 * frees for the next successful commit. The user-space
+			 * frees applied by UpdateFreeList are reverted so the
+			 * allocator cannot reuse blocks the on-disk tree still
+			 * references; the preserved tobefreed list reapplies them
+			 * on the next attempt.
+			 */
+			UndoFreeList(g);
+			if (!g->updatefailshown)
+			{
+				ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+				g->updatefailshown = TRUE;
+			}
 			success = FALSE;
 		}
 
@@ -283,12 +316,24 @@ BOOL UpdateDisk (globaldata *g)
 	else
 	{
 		if (volume && g->dirty && g->softprotect)
-			ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+		{
+			/* volume is dirty but soft protected (usually error
+			 * enforced): keep g->dirty so the data is flushed when the
+			 * protection is lifted, but tell the user only once.
+			 */
+			if (!g->updatefailshown)
+			{
+				ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+				g->updatefailshown = TRUE;
+			}
+		}
+		else
+		{
+			g->dirty = FALSE;
+		}
 
 		success = FALSE;
 	}
-
-	g->dirty = FALSE;
 
 	EXIT("UpdateDisk");
 	return success;
@@ -307,15 +352,37 @@ static void RemoveEmptyDBlocks(struct volumedata *volume, globaldata *g)
 	{
 		for (blk = HeadOf(&volume->dirblks[i]); (next=blk->next); blk=next)
 		{
-			if (IsEmptyDBlk(blk) && !IsFirstDBlk(blk, g) && !ISLOCKED(blk) )
+			/* The condition and body can cache-miss and evict blocks
+			 * via AllocLRU: neither the current block nor the saved
+			 * iterator may be the victim, so both are locked (the list
+			 * sentinel is not a block and must not be touched).
+			 * ISLOCKED is tested before taking our own lock.
+			 */
+			UWORD nextlock = 0, myoldlock;
+			BOOL nextislocked = next->next != NULL;
+			BOOL waslocked = ISLOCKED(blk);
+			if (nextislocked)
+			{
+				nextlock = next->used;
+				LOCK(next);
+			}
+			myoldlock = blk->used;
+			LOCK(blk);
+			if (IsEmptyDBlk(blk) && !IsFirstDBlk(blk, g) && !waslocked )
 			{
 				previous = GetAnodeOfDBlk(blk, &anode, g);
 				RemoveFromAnodeChain(&anode, previous, blk->blk.anodenr, g);
 				MinRemove(blk);
 				FreeReservedBlock(blk->blocknr, g);
 				ResToBeFreed(blk->oldblocknr, g);
-				FreeLRU((struct cachedblock *)blk);
+				FreeLRU((struct cachedblock *)blk);   /* wipes blk->used */
 			}
+			else
+			{
+				blk->used = myoldlock;
+			}
+			if (nextislocked)
+				next->used = nextlock;
 		}
 	}
 }
@@ -355,14 +422,33 @@ static void RemoveEmptyIBlocks(struct volumedata *volume, globaldata *g)
 
 	for (blk = HeadOf(&volume->indexblks); (next=blk->next); blk=next)
 	{
-		if (blk->changeflag && !IsFirstIBlk(blk) && IsEmptyIBlk(blk,g) && !ISLOCKED(blk) )
+		/* see RemoveEmptyDBlocks: protect iterator and current block
+		 * from eviction (UpdateIBLK can load a superblock)
+		 */
+		UWORD nextlock = 0, myoldlock;
+		BOOL nextislocked = next->next != NULL;
+		BOOL waslocked = ISLOCKED(blk);
+		if (nextislocked)
+		{
+			nextlock = next->used;
+			LOCK(next);
+		}
+		myoldlock = blk->used;
+		LOCK(blk);
+		if (blk->changeflag && !IsFirstIBlk(blk) && IsEmptyIBlk(blk,g) && !waslocked )
 		{
 			UpdateIBLK((struct cachedblock *)blk, 0, g);
 			MinRemove(blk);
 			FreeReservedBlock(blk->blocknr, g);
 			ResToBeFreed(blk->oldblocknr, g);
-			FreeLRU((struct cachedblock *)blk);
+			FreeLRU((struct cachedblock *)blk);   /* wipes blk->used */
 		}
+		else
+		{
+			blk->used = myoldlock;
+		}
+		if (nextislocked)
+			next->used = nextlock;
 	}
 }
 
@@ -372,6 +458,14 @@ static void RemoveEmptySBlocks(struct volumedata *volume, globaldata *g)
 
 	for (blk = HeadOf(&volume->superblks); (next=blk->next); blk=next)
 	{
+		/* see RemoveEmptyDBlocks: protect the iterator from eviction */
+		UWORD nextlock = 0;
+		BOOL nextislocked = next->next != NULL;
+		if (nextislocked)
+		{
+			nextlock = next->used;
+			LOCK(next);
+		}
 		if (blk->changeflag && !IsFirstIBlk(blk) && IsEmptyIBlk(blk, g) && !ISLOCKED(blk) )
 		{
 			UpdateSBLK((struct cachedblock *)blk, 0, g);
@@ -380,6 +474,8 @@ static void RemoveEmptySBlocks(struct volumedata *volume, globaldata *g)
 			ResToBeFreed(blk->oldblocknr, g);
 			FreeLRU((struct cachedblock *)blk);
 		}
+		if (nextislocked)
+			next->used = nextlock;
 	}
 }
 
@@ -393,23 +489,54 @@ static void RemoveEmptyABlocks(struct volumedata *volume, globaldata *g)
 	{
 		for (blk = HeadOf(&volume->anblks[i]); (next=blk->next); blk=next)
 		{
-			if (blk->changeflag && !IsFirstABlk(blk) && IsEmptyABlk(blk, g) && !ISLOCKED(blk) )
+			/* see RemoveEmptyDBlocks: protect iterator and current
+			 * block from eviction (GetIndexBlock can cache-miss)
+			 */
+			UWORD nextlock = 0, myoldlock;
+			BOOL nextislocked = next->next != NULL;
+			BOOL waslocked = ISLOCKED(blk);
+			if (nextislocked)
+			{
+				nextlock = next->used;
+				LOCK(next);
+			}
+			myoldlock = blk->used;
+			LOCK(blk);
+			if (blk->changeflag && !IsFirstABlk(blk) && IsEmptyABlk(blk, g) && !waslocked )
 			{
 				indexblknr  = ((struct canodeblock *)blk)->blk.seqnr / andata.indexperblock;
 				indexoffset = ((struct canodeblock *)blk)->blk.seqnr % andata.indexperblock;
 
-				/* kill the block */
-				MinRemove(blk);
-				FreeReservedBlock(blk->blocknr, g);
-				ResToBeFreed(blk->oldblocknr, g);
-				FreeLRU((struct cachedblock *)blk);
-
-				/* and remove the reference (this one should already be in the cache) */
+				/* remove the index reference first: GetIndexBlock can
+				 * cache-miss (the block is NOT guaranteed to be cached)
+				 * and must not run after the anodeblock has been freed
+				 */
 				index = GetIndexBlock(indexblknr, g);
 				DBERR(if (!index) ErrorTrace(5,"RemoveEmptyABlocks", "GetIndexBlock returned NULL!"));
-				index->blk.index[indexoffset] = 0;
-				index->changeflag = TRUE;
+				if (index)
+				{
+					index->blk.index[indexoffset] = 0;
+					MakeBlockDirty((struct cachedblock *)index, g);
+
+					/* kill the block */
+					MinRemove(blk);
+					FreeReservedBlock(blk->blocknr, g);
+					ResToBeFreed(blk->oldblocknr, g);
+					FreeLRU((struct cachedblock *)blk);   /* wipes blk->used */
+				}
+				else
+				{
+					/* index block unavailable: keep the anodeblock,
+					 * it will be retried next update */
+					blk->used = myoldlock;
+				}
 			}
+			else
+			{
+				blk->used = myoldlock;
+			}
+			if (nextislocked)
+				next->used = nextlock;
 		}
 	}
 }
@@ -458,7 +585,12 @@ static BOOL UpdateList (struct cachedblock *blk, globaldata *g)
 	{
 		if (blk->changeflag)
 		{
-			FreeReservedBlock (blk->oldblocknr, g);
+			/* Queue the old location instead of freeing it directly:
+			 * it is still referenced by the on-disk rootblock and must
+			 * not become allocatable until the commit (root write) has
+			 * actually succeeded. CommitReservedToBeFreed runs after it.
+			 */
+			ResToBeFreed (blk->oldblocknr, g);
 			blk2 = (struct cbitmapblock *)blk;
 			blk2->blk.datestamp = blk2->volume->rootblk->datestamp;
 			blk->oldblocknr = 0;
@@ -475,7 +607,11 @@ static BOOL UpdateList (struct cachedblock *blk, globaldata *g)
 	return TRUE;
 
   update_error:
-	ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+	if (!g->updatefailshown)
+	{
+		ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+		g->updatefailshown = TRUE;
+	}
 	return FALSE;
 }
 
@@ -488,12 +624,18 @@ static BOOL UpdateDirtyBlock (struct cachedblock *blk, globaldata *g)
 
 	if (blk->changeflag)
 	{
-		FreeReservedBlock (blk->oldblocknr, g);
+		/* see UpdateList: keep the old location reserved until the
+		 * commit has succeeded */
+		ResToBeFreed (blk->oldblocknr, g);
 		blk->oldblocknr = 0;
 		error = RawWrite ((UBYTE *)&blk->data, RESCLUSTER, blk->blocknr, g);
 		if (error)
 		{
-			ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+			if (!g->updatefailshown)
+			{
+				ErrorMsg (AFS_ERROR_UPDATE_FAIL, NULL, g);
+				g->updatefailshown = TRUE;
+			}
 			return FALSE;
 		}
 	}
@@ -709,8 +851,14 @@ static void UpdateIBLK(struct cachedblock *blk, ULONG newblocknr, globaldata *g)
 static void UpdateSBLK(struct cachedblock *blk, ULONG newblocknr, globaldata *g)
 {
 	blk->changeflag = TRUE;
-	blk->volume->rblkextension->changeflag = TRUE;
 	blk->volume->rblkextension->blk.superindex[((struct cindexblock *)blk)->blk.seqnr] = newblocknr;
+	/* Use MakeBlockDirty (cf. UpdateDELDIR): setting the changeflag
+	 * directly would skip the copy-on-write reallocation of the
+	 * rootblockextension, and UpdateDisk would then overwrite it at the
+	 * location the on-disk rootblock still references, before the
+	 * rootblock itself is committed.
+	 */
+	MakeBlockDirty ((struct cachedblock *)blk->volume->rblkextension, g);
 }
 
 static void UpdateBMBLK (struct cachedblock *blk, ULONG newblocknr, globaldata *g)

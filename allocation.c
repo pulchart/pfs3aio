@@ -226,6 +226,7 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 {
   ULONG nr, field, i, j, blocknr, blocksdone = 0;
   ULONG extra;
+  ULONG scanned = 0;
   FSIZE oldfilesize = 0;
   ULONG bmseqnr;
   UWORD bmoffset, oldlocknr;
@@ -240,7 +241,14 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 	/* Check if allocation possible */
 	if(alloc_data.alloc_available < size)
 		return DOSFALSE;
-	
+
+	/* Keep the directory block of the file being extended cached: the
+	 * updates and anode operations below can cause LRU eviction, and
+	 * ref->direntry points into this block. (Unlocked at end of packet.)
+	 */
+	if (ref)
+		LOCK(ref->dirblock);
+
 	/* check for sufficient clean freespace (freespace that doesn't overlap
 	 * with the current state on disk)
 	 */
@@ -261,7 +269,10 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 		chnode = chnode->next;
 
 	extra = min (256, i*8);
-	if (chnode->an.blocknr && (chnode->an.blocknr != -1))
+	/* the range check also keeps the bit lookup inside the bitmap when
+	 * the file ends exactly at the end of the volume */
+	if (chnode->an.blocknr && (chnode->an.blocknr != -1) &&
+		(chnode->an.blocknr + chnode->an.clustersize < vol->numblocks))
 	{
 		i = chnode->an.blocknr + chnode->an.clustersize - alloc_data.bitmapstart;
 		nr = i/32;
@@ -270,18 +281,21 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 		bmseqnr = nr/alloc_data.longsperbmb;
 		bmoffset = nr%alloc_data.longsperbmb;
 		bitmap = GetBitmapBlock (bmseqnr, g);
-		field = bitmap->blk.bitmap[bmoffset];
-
-		/* block directly behind file free ? */
-		if (field & j)
+		if (bitmap)
 		{
-			extend = true;
+			field = bitmap->blk.bitmap[bmoffset];
 
-			/* if the position we want to allocate does not corresponds to the
-			 * rovingpointer, the rovingpointer should not be updated
-			 */
-			if (nr != g->rootblock->roving_ptr)
-				updateroving = false;
+			/* block directly behind file free ? */
+			if (field & j)
+			{
+				extend = true;
+
+				/* if the position we want to allocate does not corresponds to the
+				 * rovingpointer, the rovingpointer should not be updated
+				 */
+				if (nr != g->rootblock->roving_ptr)
+					updateroving = false;
+			}
 		}
 	}
 	
@@ -299,9 +313,17 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 	/* Allocate */
 	while (size)
 	{
-		/* scan all bitmapblocks */
+		/* scan all bitmapblocks. An unreadable bitmap block is skipped
+		 * (nothing is allocated from it); the sweep guard below fails
+		 * the allocation if no usable block is found.
+		 */
 		bitmap = GetBitmapBlock(bmseqnr, g);
+		if (bitmap)
+		{
 		oldlocknr = bitmap->used;
+		/* the bitmap block must survive SaveAnode/AllocAnode/
+		 * UpdateDisk calls inside the scan (LRU eviction) */
+		LOCK(bitmap);
 
 		/* find all empty fields */
 		while (bmoffset < alloc_data.longsperbmb)
@@ -375,6 +397,7 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 							alloc_data.clean_blocksfree--;
 							alloc_data.alloc_available--;
 							blocksdone++;
+							scanned = 0;
 
 							/* update reference */
 							if (ref)
@@ -414,12 +437,32 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 		}
 
 		bitmap->used = oldlocknr;
+		}
 
 		/* get ready for next block */
 		bmseqnr = (bmseqnr+1)%(alloc_data.no_bmb);
 		bmoffset = 0;
+
+		/* Safety net: the free counters can claim more space than the
+		 * bitmap actually has (e.g. blocksfree overcounted by one on
+		 * unaligned partitions formatted by earlier versions). Fail the
+		 * allocation after a full fruitless sweep of all bitmap blocks
+		 * instead of scanning forever.
+		 */
+		if (++scanned > alloc_data.no_bmb)
+		{
+#if VERSION23
+			if (ref)
+			{
+				SetDEFileSize(ref->direntry, oldfilesize, g);
+				MakeBlockDirty ((struct cachedblock *)ref->dirblock, g);
+			}
+#endif
+			FreeBlocksAC (achain, blocksdone, freeanodes, g);
+			return DOSFALSE;
+		}
 	}
-	
+
 alloc_end:
 
 	/* finish by saving anode and updating roving ptr */
@@ -527,6 +570,13 @@ VOID FreeBlocksAC (struct anodechain *achain, ULONG size, enum freeblocktype fre
 			chnode = chnode->next;
 
 l1:   /* get blocks to free */
+		/* If the tobefreed cache is full even after the flush attempts
+		 * below (i.e. disk updates are failing), stop freeing: the
+		 * remaining blocks simply stay allocated (recovered later by
+		 * the postponed operation) instead of overflowing the cache.
+		 */
+		if (i >= TBF_CACHE_SIZE)
+			break;
 		if (chnode->an.clustersize <= size)
 		{
 			freeing = chnode->an.clustersize;
@@ -572,20 +622,22 @@ l1:   /* get blocks to free */
 		{
 			alloc_data.tobefreed_index = i;
 			g->dirty = DOSTRUE;
-			if (rext && freetype == freeanodes)
+			if (freetype == freeanodes)
 			{
 				/* make anodechain consistent */
 				RestoreAnodeChain (achain, empty, tail, g);
 				tail = NULL;
 
 				/* postponed op: finish operation later */
-				rext->blk.tobedone.argument2 = size;
+				if (rext)
+					rext->blk.tobedone.argument2 = size;
 			}
-			else
+			else if (rext)
 				/* postponed op: repeat operation later, but don't increase blocks free twice */
 				rext->blk.tobedone.argument3 = blocksdone;
 
-			MakeBlockDirty ((struct cachedblock *)rext, g);
+			if (rext)
+				MakeBlockDirty ((struct cachedblock *)rext, g);
 			UpdateDisk (g);
 			i = alloc_data.tobefreed_index;
 		}
@@ -671,17 +723,77 @@ void UpdateFreeList (globaldata *g)
 				bmseqnr = newbmseqnr;
 				bitmap = GetBitmapBlock (bmseqnr, g);
 			}
-			bitmap->blk.bitmap[bmoffset] |= (1<<(31-(bitnr%32)));
-			MakeBlockDirty ((struct cachedblock *)bitmap, g);
+			/* an unreadable bitmap block leaks the blocks mapped by it
+			 * (safe direction) instead of writing through NULL */
+			if (bitmap)
+			{
+				bitmap->blk.bitmap[bmoffset] |= (1<<(31-(bitnr%32)));
+				MakeBlockDirty ((struct cachedblock *)bitmap, g);
+			}
 		}
 
 		alloc_data.clean_blocksfree += alloc_data.tobefreed[i][TBF_SIZE];
 	}
 
 	/* update global data */
-	/* alloc_data.alloc_available should already be equal blocksfree - alwaysfree */
+	/* alloc_data.alloc_available should already be equal blocksfree - alwaysfree
+	 *
+	 * NOTE: the tobefreed list itself is NOT cleared here. UpdateDisk
+	 * calls CommitFreeList() once the rootblock write has succeeded, or
+	 * UndoFreeList() if the update failed (so the uncommitted frees
+	 * cannot be allocated while the on-disk tree still references them;
+	 * the list is then reapplied by the next attempt).
+	 */
+	g->rootblock->blocksfree = alloc_data.clean_blocksfree;
+	g->currentvolume->rootblockchangeflag = TRUE;
+}
+
+/* Called by UpdateDisk after a successful commit: the frees applied by
+ * UpdateFreeList are now on disk, the list can be emptied.
+ */
+void CommitFreeList (globaldata *g)
+{
 	alloc_data.tobefreed_index = 0;
 	alloc_data.tbf_resneed = 0;
+}
+
+/* Called by UpdateDisk after a FAILED commit: revert the bitmap changes
+ * made by UpdateFreeList, so the blocks - still referenced by the
+ * on-disk tree - cannot be handed out by the allocator before a later
+ * update commits the frees for real.
+ */
+void UndoFreeList (globaldata *g)
+{
+  cbitmapblock_t *bitmap = 0;
+  UWORD i;
+  ULONG longnr, blocknr, bmseqnr, newbmseqnr, bmoffset, bitnr;
+
+	bmseqnr = ~0;
+	for (i=0; i<alloc_data.tobefreed_index; i++)
+	{
+		for ( blocknr = alloc_data.tobefreed[i][TBF_BLOCKNR];
+			  blocknr < alloc_data.tobefreed[i][TBF_SIZE] + alloc_data.tobefreed[i][TBF_BLOCKNR];
+			  blocknr++ )
+		{
+			bitnr = blocknr - alloc_data.bitmapstart;
+			longnr = bitnr/32;
+			newbmseqnr = longnr/alloc_data.longsperbmb;
+			bmoffset = longnr%alloc_data.longsperbmb;
+			if(newbmseqnr != bmseqnr)
+			{
+				bmseqnr = newbmseqnr;
+				bitmap = GetBitmapBlock (bmseqnr, g);
+			}
+			if (bitmap)
+			{
+				bitmap->blk.bitmap[bmoffset] &= ~(1<<(31-(bitnr%32)));
+				MakeBlockDirty ((struct cachedblock *)bitmap, g);
+			}
+		}
+
+		alloc_data.clean_blocksfree -= alloc_data.tobefreed[i][TBF_SIZE];
+	}
+
 	g->rootblock->blocksfree = alloc_data.clean_blocksfree;
 	g->currentvolume->rootblockchangeflag = TRUE;
 }
