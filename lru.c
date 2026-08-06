@@ -305,10 +305,12 @@ void ResToBeFreed(ULONG blocknr, globaldata *g)
 #ifdef BETAVERSION
 			ErrorMsg (AFS_BETA_WARNING_1, NULL, g);
 #endif
-			/* hope nobody allocates this block before the disk has been
-			 * updated
+			/* Cache full and no memory to extend it. Leak the block
+			 * (recoverable by a disk repair tool) rather than freeing
+			 * it early: the committed rootblock may still reference
+			 * it, and an early free would allow it to be reallocated
+			 * and overwritten before the next update commits.
 			 */
-			FreeReservedBlock (blocknr, g);
 		}
 	}
 }
