@@ -607,11 +607,18 @@ static void MakeReservedBitmap (struct rootblock **rbl, ULONG numreserved, globa
 	for (i = 0; i<numreserved/32; i++)
 		*bitmap++ = ~0;
 
-	/* the last border */
-	last = 0;
-	for (i=0; i < numreserved%32; i++)
-		last |= 0x80000000>>i;
-	*bitmap = last;
+	/* the last border. Only written when a partial word exists:
+	 * numreserved is always a multiple of 32, and the unconditional
+	 * write went one ULONG past the allocation when the bitmap exactly
+	 * filled the rootblock cluster.
+	 */
+	if (numreserved % 32)
+	{
+		last = 0;
+		for (i=0; i < numreserved%32; i++)
+			last |= 0x80000000>>i;
+		*bitmap = last;
+	}
 
 	/* allocate taken blocks + rootblock extension (de + 1)
 	 * The reserved area starts with the rootblock.
