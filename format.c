@@ -200,7 +200,10 @@ BOOL FDSFormat (DSTR diskname, LONG disktype, SIPTR *error, ULONG rsblocks, glob
 
 	// Only 512, 1024, 2048 and 4096 block sizes are supported.
 	// Last two require new large partition mode.
-	if (g->geom->dg_SectorSize < 512 || g->geom->dg_SectorSize > 4096 || cbs > 4096) { 
+	// Both sector size and logical block size must be powers of two.
+	if (g->geom->dg_SectorSize < 512 || g->geom->dg_SectorSize > 4096 || cbs > 4096 ||
+		(g->geom->dg_SectorSize & (g->geom->dg_SectorSize - 1)) ||
+		(cbs & (cbs - 1))) {
 		*error = ERROR_BAD_NUMBER;
 		return DOSFALSE;
 	}

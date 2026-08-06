@@ -1171,6 +1171,17 @@ static BOOL GetCurrentRoot(struct rootblock **rootblock, globaldata *g)
 		goto nrd_error;
 	}
 
+	/* reserved_blksize must be a power of two, at least the logical
+	 * block size and at most 4096; anything else breaks the
+	 * rescluster arithmetic (rescluster 0 -> division by zero) and
+	 * the reserved-block cache
+	 */
+	if (rbp->reserved_blksize < BLOCKSIZE || rbp->reserved_blksize > 4096 ||
+		(rbp->reserved_blksize & (rbp->reserved_blksize - 1)))
+	{
+		goto nrd_error;
+	}
+
 	/* NOTE: InitLRU is deliberately NOT called here. GetCurrentRoot may
 	 * run while another volume is still current and dirty (disk swap,
 	 * RequestCurrentVolumeBack polling): reinitializing the LRU for a
@@ -1289,18 +1300,26 @@ void CalculateBlockSize(globaldata *g, ULONG spb, ULONG blocksize)
 	if (!blocksize)
 	{
 		blocksize = bs * spb;
-		if (blocksize >= 4096)
-		{
-			blocksize = 4096;
-		} else if (blocksize >= 2048)
-		{
-			blocksize = 2048;
-		}
-		if (blocksize < bs)
-		{
-			blocksize = bs;
-		}
-	}	
+	}
+	/* Normalize to a power of two (round down), at least the physical
+	 * sector size, at most 4096. A non-power-of-two size (e.g.
+	 * DE_SECSPERBLK = 3) would yield mutually inconsistent
+	 * blockshift/blocklogshift values: the trackdisk and DirectSCSI
+	 * paths would then address different physical sectors for the same
+	 * logical block.
+	 */
+	if (blocksize >= 4096)
+		blocksize = 4096;
+	else if (blocksize >= 2048)
+		blocksize = 2048;
+	else if (blocksize >= 1024)
+		blocksize = 1024;
+	else
+		blocksize = 512;
+	if (blocksize < bs)
+	{
+		blocksize = bs;
+	}
     g->blocksize_phys = bs;
     g->blocksize = blocksize;
     g->blocklogshift = 0;
