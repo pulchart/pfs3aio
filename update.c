@@ -352,15 +352,37 @@ static void RemoveEmptyDBlocks(struct volumedata *volume, globaldata *g)
 	{
 		for (blk = HeadOf(&volume->dirblks[i]); (next=blk->next); blk=next)
 		{
-			if (IsEmptyDBlk(blk) && !IsFirstDBlk(blk, g) && !ISLOCKED(blk) )
+			/* The condition and body can cache-miss and evict blocks
+			 * via AllocLRU: neither the current block nor the saved
+			 * iterator may be the victim, so both are locked (the list
+			 * sentinel is not a block and must not be touched).
+			 * ISLOCKED is tested before taking our own lock.
+			 */
+			UWORD nextlock = 0, myoldlock;
+			BOOL nextislocked = next->next != NULL;
+			BOOL waslocked = ISLOCKED(blk);
+			if (nextislocked)
+			{
+				nextlock = next->used;
+				LOCK(next);
+			}
+			myoldlock = blk->used;
+			LOCK(blk);
+			if (IsEmptyDBlk(blk) && !IsFirstDBlk(blk, g) && !waslocked )
 			{
 				previous = GetAnodeOfDBlk(blk, &anode, g);
 				RemoveFromAnodeChain(&anode, previous, blk->blk.anodenr, g);
 				MinRemove(blk);
 				FreeReservedBlock(blk->blocknr, g);
 				ResToBeFreed(blk->oldblocknr, g);
-				FreeLRU((struct cachedblock *)blk);
+				FreeLRU((struct cachedblock *)blk);   /* wipes blk->used */
 			}
+			else
+			{
+				blk->used = myoldlock;
+			}
+			if (nextislocked)
+				next->used = nextlock;
 		}
 	}
 }
@@ -400,14 +422,33 @@ static void RemoveEmptyIBlocks(struct volumedata *volume, globaldata *g)
 
 	for (blk = HeadOf(&volume->indexblks); (next=blk->next); blk=next)
 	{
-		if (blk->changeflag && !IsFirstIBlk(blk) && IsEmptyIBlk(blk,g) && !ISLOCKED(blk) )
+		/* see RemoveEmptyDBlocks: protect iterator and current block
+		 * from eviction (UpdateIBLK can load a superblock)
+		 */
+		UWORD nextlock = 0, myoldlock;
+		BOOL nextislocked = next->next != NULL;
+		BOOL waslocked = ISLOCKED(blk);
+		if (nextislocked)
+		{
+			nextlock = next->used;
+			LOCK(next);
+		}
+		myoldlock = blk->used;
+		LOCK(blk);
+		if (blk->changeflag && !IsFirstIBlk(blk) && IsEmptyIBlk(blk,g) && !waslocked )
 		{
 			UpdateIBLK((struct cachedblock *)blk, 0, g);
 			MinRemove(blk);
 			FreeReservedBlock(blk->blocknr, g);
 			ResToBeFreed(blk->oldblocknr, g);
-			FreeLRU((struct cachedblock *)blk);
+			FreeLRU((struct cachedblock *)blk);   /* wipes blk->used */
 		}
+		else
+		{
+			blk->used = myoldlock;
+		}
+		if (nextislocked)
+			next->used = nextlock;
 	}
 }
 
@@ -417,6 +458,14 @@ static void RemoveEmptySBlocks(struct volumedata *volume, globaldata *g)
 
 	for (blk = HeadOf(&volume->superblks); (next=blk->next); blk=next)
 	{
+		/* see RemoveEmptyDBlocks: protect the iterator from eviction */
+		UWORD nextlock = 0;
+		BOOL nextislocked = next->next != NULL;
+		if (nextislocked)
+		{
+			nextlock = next->used;
+			LOCK(next);
+		}
 		if (blk->changeflag && !IsFirstIBlk(blk) && IsEmptyIBlk(blk, g) && !ISLOCKED(blk) )
 		{
 			UpdateSBLK((struct cachedblock *)blk, 0, g);
@@ -425,6 +474,8 @@ static void RemoveEmptySBlocks(struct volumedata *volume, globaldata *g)
 			ResToBeFreed(blk->oldblocknr, g);
 			FreeLRU((struct cachedblock *)blk);
 		}
+		if (nextislocked)
+			next->used = nextlock;
 	}
 }
 
@@ -438,23 +489,54 @@ static void RemoveEmptyABlocks(struct volumedata *volume, globaldata *g)
 	{
 		for (blk = HeadOf(&volume->anblks[i]); (next=blk->next); blk=next)
 		{
-			if (blk->changeflag && !IsFirstABlk(blk) && IsEmptyABlk(blk, g) && !ISLOCKED(blk) )
+			/* see RemoveEmptyDBlocks: protect iterator and current
+			 * block from eviction (GetIndexBlock can cache-miss)
+			 */
+			UWORD nextlock = 0, myoldlock;
+			BOOL nextislocked = next->next != NULL;
+			BOOL waslocked = ISLOCKED(blk);
+			if (nextislocked)
+			{
+				nextlock = next->used;
+				LOCK(next);
+			}
+			myoldlock = blk->used;
+			LOCK(blk);
+			if (blk->changeflag && !IsFirstABlk(blk) && IsEmptyABlk(blk, g) && !waslocked )
 			{
 				indexblknr  = ((struct canodeblock *)blk)->blk.seqnr / andata.indexperblock;
 				indexoffset = ((struct canodeblock *)blk)->blk.seqnr % andata.indexperblock;
 
-				/* kill the block */
-				MinRemove(blk);
-				FreeReservedBlock(blk->blocknr, g);
-				ResToBeFreed(blk->oldblocknr, g);
-				FreeLRU((struct cachedblock *)blk);
-
-				/* and remove the reference (this one should already be in the cache) */
+				/* remove the index reference first: GetIndexBlock can
+				 * cache-miss (the block is NOT guaranteed to be cached)
+				 * and must not run after the anodeblock has been freed
+				 */
 				index = GetIndexBlock(indexblknr, g);
 				DBERR(if (!index) ErrorTrace(5,"RemoveEmptyABlocks", "GetIndexBlock returned NULL!"));
-				index->blk.index[indexoffset] = 0;
-				index->changeflag = TRUE;
+				if (index)
+				{
+					index->blk.index[indexoffset] = 0;
+					MakeBlockDirty((struct cachedblock *)index, g);
+
+					/* kill the block */
+					MinRemove(blk);
+					FreeReservedBlock(blk->blocknr, g);
+					ResToBeFreed(blk->oldblocknr, g);
+					FreeLRU((struct cachedblock *)blk);   /* wipes blk->used */
+				}
+				else
+				{
+					/* index block unavailable: keep the anodeblock,
+					 * it will be retried next update */
+					blk->used = myoldlock;
+				}
 			}
+			else
+			{
+				blk->used = myoldlock;
+			}
+			if (nextislocked)
+				next->used = nextlock;
 		}
 	}
 }
