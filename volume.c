@@ -976,7 +976,12 @@ static void GetExtBlockGeometry(struct rootblock *rootblock, ULONG rblsize, glob
 		return;
 
 	rext = AllocBufmemR(rblsize << BLOCKSHIFT, g);
-	if (RawRead((UBYTE *)rext, rblsize, rootblock->extension, g) != 0) {
+	/* RawRead returns 0 on success. Apply the stored geometry only if the
+	 * extension block was actually read and is valid; a failed read must
+	 * not touch the DosEnvec (the buffer contents are undefined then).
+	 */
+	if (RawRead((UBYTE *)rext, rblsize, rootblock->extension, g) == 0 &&
+		rext->id == EXTENSIONID && rext->dosenvec[1] != 0) {
 		int minlen = env[0] > rext->dosenvec[0] ? rext->dosenvec[0] : env[0];
 		if (minlen > 10)
 			minlen = 10; // de_SizeBlock to de_HighCyl
