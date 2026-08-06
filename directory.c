@@ -3815,11 +3815,16 @@ void UpdateLinks(struct direntry *object, globaldata * g)
 	linknr = extrafields.link;
 	while (linknr)
 	{
-		/* Update link: get link object info and update size */
+		/* Update link: get link object info and update size.
+		 * Skip dangling nodes (link direntry not found) instead of
+		 * writing through an uninitialized objectinfo.
+		 */
 		GetAnode(&linklist, linknr, g);
-		FetchObject(linklist.blocknr, linklist.nr, &loi, g);
-		loi.file.direntry->fsize = object->fsize;
-		MakeBlockDirty((struct cachedblock *)loi.file.dirblock, g);
+		if (FetchObject(linklist.blocknr, linklist.nr, &loi, g))
+		{
+			loi.file.direntry->fsize = object->fsize;
+			MakeBlockDirty((struct cachedblock *)loi.file.dirblock, g);
+		}
 		linknr = linklist.next;
 	}
 }
@@ -3841,8 +3846,15 @@ static BOOL DeleteLink(struct fileinfo *link, SIPTR *error, globaldata * g)
 	/* delete old entry */
 	ChangeDirEntry(*link, NULL, NULL, NULL, g);
 
-	/* get object */
-	FetchObject(linknode.clustersize, extrafields.link, &object, g);
+	/* get object. If the master is not found (chain was already
+	 * inconsistent), just discard the link node instead of operating
+	 * on an uninitialized objectinfo.
+	 */
+	if (!FetchObject(linknode.clustersize, extrafields.link, &object, g))
+	{
+		FreeAnode(linknode.nr, g);
+		return DOSTRUE;
+	}
 	GetExtraFields(object.file.direntry, &extrafields);
 
 	/* if the object lists our link as the first link, redirect it to the next one */
@@ -3856,18 +3868,26 @@ static BOOL DeleteLink(struct fileinfo *link, SIPTR *error, globaldata * g)
 			return DOSFALSE;	// should never happen
 		}
 		else {
-			ChangeDirEntry(object.file, (struct direntry *)entrybuffer, &directory, &object.file, g);
+			if (!ChangeDirEntry(object.file, (struct direntry *)entrybuffer, &directory, &object.file, g))
+			{
+				*error = ERROR_DISK_FULL;
+				return DOSFALSE;
+			}
 		}
 	}
 	/* otherwise simply remove the link from the list of links */
 	else
 	{
 		GetAnode(&linklist, extrafields.link, g);
-		while (linklist.next != linknode.nr)
+		while (linklist.next != linknode.nr && linklist.next)
 			GetAnode(&linklist, linklist.next, g);
 
-		linklist.next = linknode.next;
-		SaveAnode(&linklist, linklist.nr, g);
+		if (linklist.next == linknode.nr)
+		{
+			linklist.next = linknode.next;
+			SaveAnode(&linklist, linklist.nr, g);
+		}
+		/* else: our node was not in the chain (already inconsistent) */
 	}
 
 	FreeAnode(linknode.nr, g);
@@ -3897,12 +3917,22 @@ static BOOL RemapLinks(struct fileinfo *object, globaldata * g)
 
 	/* the file has links; get head of list
 	 * we are going to promote this link to
-	 * an object 
+	 * an object. Dangling nodes (no direntry found) are discarded.
 	 */
-	GetAnode(&linknode, extrafields.link, g);
+	{
+		ULONG linknr = extrafields.link;
 
-	/* get direntry belonging to this linknode */
-	FetchObject(linknode.blocknr, linknode.nr, &link, g);
+		for (;;)
+		{
+			GetAnode(&linknode, linknr, g);
+			if (FetchObject(linknode.blocknr, linknode.nr, &link, g))
+				break;
+			linknr = linknode.next;
+			FreeAnode(linknode.nr, g);
+			if (!linknr)
+				return FALSE;   /* no valid link to promote */
+		}
+	}
 
 	/* Promote it from link to object */
 	destentry = (struct direntry *)entrybuffer;
@@ -3922,14 +3952,15 @@ static BOOL RemapLinks(struct fileinfo *object, globaldata * g)
 	ChangeDirEntry(*object, NULL, NULL, NULL, g);
 
 	/* Refetch new head (can have become invalid) */
-	FetchObject(linknode.blocknr, linknode.nr, &link, g);
-	if (GetParent(&link, &directory, &error, g))
-		ChangeDirEntry(link.file, destentry, &directory, &link.file, g);
-
-	/* object directory has changed; update link chain
-	 * new directory is the old chain head was in: linknode.linkdir (== linknode.blocknr)
-	 */
-	UpdateLinkDir(link.file.direntry, linknode.blocknr, g);
+	if (FetchObject(linknode.blocknr, linknode.nr, &link, g) &&
+		GetParent(&link, &directory, &error, g) &&
+		ChangeDirEntry(link.file, destentry, &directory, &link.file, g))
+	{
+		/* object directory has changed; update link chain
+		 * new directory is the old chain head was in: linknode.linkdir (== linknode.blocknr)
+		 */
+		UpdateLinkDir(link.file.direntry, linknode.blocknr, g);
+	}
 	return TRUE;
 }
 
