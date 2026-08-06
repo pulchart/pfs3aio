@@ -1,0 +1,7 @@
+# generated fixtures and scratch — never commit disk images
+fixtures/
+.tmp/
+*.hdf
+# compiled live-test binaries and extracted source
+live/gen/
+live/*_live
