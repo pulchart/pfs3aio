@@ -202,7 +202,12 @@ BOOL UpdateDisk (globaldata *g)
 
 		g->uip = TRUE;
 		updateok = TRUE;
-		UpdateDataCache (g);            /* flush DiskRead DiskWrite cache */
+		/* flush DiskRead DiskWrite cache; if user data cannot be
+		 * written the commit is aborted (and retried later) rather
+		 * than committing metadata that references unwritten data
+		 */
+		if (UpdateDataCache (g))
+			updateok = FALSE;
 
 #if VERSION23
 		/* make sure rootblockextension is reallocated */
