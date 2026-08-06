@@ -1659,8 +1659,15 @@ retry:
 	if (!BoundsCheck(write, blocknr, blocks, g))
 		return ERROR_SEEK_ERROR;
 
-	/* chop in maxtransfer chunks */
-	maxtransfer = min(g->maxtransfermax, g->dosenvec->de_MaxTransfer) >> BLOCKSHIFT;
+	/* chop in maxtransfer chunks. maxtransfer is in NATIVE sectors
+	 * (the transfer loop below works in native sectors): computing it
+	 * in fs blocks made every transfer fail with ERROR_BAD_NUMBER when
+	 * MaxTransfer < 8 fs blocks (e.g. 0x4000 with 4K blocks), and
+	 * needlessly limited chunks to 1/2^blocklogshift of MaxTransfer.
+	 * The ~7 alignment keeps chunks a multiple of the logical block
+	 * size (blocklogshift <= 3).
+	 */
+	maxtransfer = min(g->maxtransfermax, g->dosenvec->de_MaxTransfer) >> BLOCKNATIVESHIFT;
 	maxtransfer = min(65535, maxtransfer); // SCSI READ/WRITE(10) max transfer
 	maxtransfer &= ~7;
 	if (!maxtransfer) {
