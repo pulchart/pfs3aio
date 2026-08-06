@@ -4568,10 +4568,14 @@ ULONG SetDeldir(int nbr, globaldata *g)
 		// i.p.v. FreeLRU((struct cachedblock *)ddblk, g);
 	}
 
-	/* free unwanted deldir blocks */
+	/* free unwanted deldir blocks. ResToBeFreed, not FreeReservedBlock:
+	 * the committed rootblockextension still references these blocks
+	 * until the next update, so they must not become allocatable before
+	 * that update's rootblock write (state overlap)
+	 */
 	for (i = nbr; i < rext->blk.deldirsize; i++)
 	{
-		FreeReservedBlock(rext->blk.deldir[i], g);
+		ResToBeFreed(rext->blk.deldir[i], g);
 		rext->blk.deldir[i] = 0;
 	}
 
