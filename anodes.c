@@ -852,7 +852,11 @@ static struct cindexblock *NewSuperBlock (UWORD seqnr, globaldata *g)
  
 	DBERR(ErrorTrace(10,"NewSuperBlock", "seqnr = %lu block = %lu\n", seqnr, volume->rblkextension->blk.superindex[seqnr]));
 
-	volume->rblkextension->changeflag = TRUE;
+	/* MakeBlockDirty, not a direct changeflag set: the extension must be
+	 * reallocated (copy-on-write) before its committed copy may be
+	 * rewritten by UpdateDisk.
+	 */
+	MakeBlockDirty ((struct cachedblock *)volume->rblkextension, g);
 
 	blok->volume     = volume;
 	blok->blocknr    = volume->rblkextension->blk.superindex[seqnr];

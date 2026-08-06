@@ -709,8 +709,14 @@ static void UpdateIBLK(struct cachedblock *blk, ULONG newblocknr, globaldata *g)
 static void UpdateSBLK(struct cachedblock *blk, ULONG newblocknr, globaldata *g)
 {
 	blk->changeflag = TRUE;
-	blk->volume->rblkextension->changeflag = TRUE;
 	blk->volume->rblkextension->blk.superindex[((struct cindexblock *)blk)->blk.seqnr] = newblocknr;
+	/* Use MakeBlockDirty (cf. UpdateDELDIR): setting the changeflag
+	 * directly would skip the copy-on-write reallocation of the
+	 * rootblockextension, and UpdateDisk would then overwrite it at the
+	 * location the on-disk rootblock still references, before the
+	 * rootblock itself is committed.
+	 */
+	MakeBlockDirty ((struct cachedblock *)blk->volume->rblkextension, g);
 }
 
 static void UpdateBMBLK (struct cachedblock *blk, ULONG newblocknr, globaldata *g)
