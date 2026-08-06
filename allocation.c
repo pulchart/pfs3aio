@@ -262,7 +262,10 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 		chnode = chnode->next;
 
 	extra = min (256, i*8);
-	if (chnode->an.blocknr && (chnode->an.blocknr != -1))
+	/* the range check also keeps the bit lookup inside the bitmap when
+	 * the file ends exactly at the end of the volume */
+	if (chnode->an.blocknr && (chnode->an.blocknr != -1) &&
+		(chnode->an.blocknr + chnode->an.clustersize < vol->numblocks))
 	{
 		i = chnode->an.blocknr + chnode->an.clustersize - alloc_data.bitmapstart;
 		nr = i/32;
@@ -271,18 +274,21 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 		bmseqnr = nr/alloc_data.longsperbmb;
 		bmoffset = nr%alloc_data.longsperbmb;
 		bitmap = GetBitmapBlock (bmseqnr, g);
-		field = bitmap->blk.bitmap[bmoffset];
-
-		/* block directly behind file free ? */
-		if (field & j)
+		if (bitmap)
 		{
-			extend = true;
+			field = bitmap->blk.bitmap[bmoffset];
 
-			/* if the position we want to allocate does not corresponds to the
-			 * rovingpointer, the rovingpointer should not be updated
-			 */
-			if (nr != g->rootblock->roving_ptr)
-				updateroving = false;
+			/* block directly behind file free ? */
+			if (field & j)
+			{
+				extend = true;
+
+				/* if the position we want to allocate does not corresponds to the
+				 * rovingpointer, the rovingpointer should not be updated
+				 */
+				if (nr != g->rootblock->roving_ptr)
+					updateroving = false;
+			}
 		}
 	}
 	
@@ -300,8 +306,13 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 	/* Allocate */
 	while (size)
 	{
-		/* scan all bitmapblocks */
+		/* scan all bitmapblocks. An unreadable bitmap block is skipped
+		 * (nothing is allocated from it); the sweep guard below fails
+		 * the allocation if no usable block is found.
+		 */
 		bitmap = GetBitmapBlock(bmseqnr, g);
+		if (bitmap)
+		{
 		oldlocknr = bitmap->used;
 
 		/* find all empty fields */
@@ -416,6 +427,7 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 		}
 
 		bitmap->used = oldlocknr;
+		}
 
 		/* get ready for next block */
 		bmseqnr = (bmseqnr+1)%(alloc_data.no_bmb);
@@ -701,8 +713,13 @@ void UpdateFreeList (globaldata *g)
 				bmseqnr = newbmseqnr;
 				bitmap = GetBitmapBlock (bmseqnr, g);
 			}
-			bitmap->blk.bitmap[bmoffset] |= (1<<(31-(bitnr%32)));
-			MakeBlockDirty ((struct cachedblock *)bitmap, g);
+			/* an unreadable bitmap block leaks the blocks mapped by it
+			 * (safe direction) instead of writing through NULL */
+			if (bitmap)
+			{
+				bitmap->blk.bitmap[bmoffset] |= (1<<(31-(bitnr%32)));
+				MakeBlockDirty ((struct cachedblock *)bitmap, g);
+			}
 		}
 
 		alloc_data.clean_blocksfree += alloc_data.tobefreed[i][TBF_SIZE];
@@ -757,8 +774,11 @@ void UndoFreeList (globaldata *g)
 				bmseqnr = newbmseqnr;
 				bitmap = GetBitmapBlock (bmseqnr, g);
 			}
-			bitmap->blk.bitmap[bmoffset] &= ~(1<<(31-(bitnr%32)));
-			MakeBlockDirty ((struct cachedblock *)bitmap, g);
+			if (bitmap)
+			{
+				bitmap->blk.bitmap[bmoffset] &= ~(1<<(31-(bitnr%32)));
+				MakeBlockDirty ((struct cachedblock *)bitmap, g);
+			}
 		}
 
 		alloc_data.clean_blocksfree -= alloc_data.tobefreed[i][TBF_SIZE];

@@ -4015,6 +4015,8 @@ static BOOL BlockTaken(struct canode *anode, globaldata * g)
 	{
 		/* get first bitmapblock */
 		bitmap = GetBitmapBlock(bmseqnr, g);
+		if (!bitmap)
+			return TRUE;    /* unreadable bitmap: assume taken (safe) */
 
 		/* check all blocks */
 		while (bmoffset < alloc_data.longsperbmb)
