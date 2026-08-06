@@ -138,7 +138,7 @@ BOOL InitLRU (globaldata *g, UWORD reserved_blksize)
 			return FALSE;
 		}
 		/* check memory against mask */
-		if (!warned && (((ULONG)g->glob_lrudata.LRUarray) & ~g->dosenvec->de_Mask)) {
+		if (!warned && (((ULONG)g->glob_lrudata.LRUarray[j]) & ~g->dosenvec->de_Mask)) {
 			ErrorMsg (AFS_WARNING_MEMORY_MASK, NULL, g);
 			warned = TRUE;
 		}
@@ -196,7 +196,6 @@ retry:
 			if (lrunode->cblk.changeflag)
 			{
 				DB(Trace(1,"AllocLRU","ResToBeFreed %lx\n",&lrunode->cblk));
-				ResToBeFreed(lrunode->cblk.oldblocknr, g);
 				UpdateDatestamp(&lrunode->cblk, g);
 				error = RawWrite ((UBYTE *)&lrunode->cblk.data, RESCLUSTER, lrunode->cblk.blocknr, g);
 				if (error) {
@@ -204,7 +203,18 @@ retry:
 					args[0] = lrunode->cblk.blocknr;
 					args[1] = error;
 					ErrorMsg (AFS_ERROR_LRU_UPDATE_FAIL, args, g);
+					/* The eviction write failed and this dirty block is
+					 * the only copy of its contents (the parents already
+					 * reference its new location). Do not discard it -
+					 * keep it cached and try to evict another block.
+					 */
+					continue;
 				}
+				/* Queue the old (committed) location for freeing only
+				 * after the new location has actually been written.
+				 */
+				ResToBeFreed(lrunode->cblk.oldblocknr, g);
+				lrunode->cblk.oldblocknr = 0;
 			}
 
 			FlushBlock(&lrunode->cblk, g);
