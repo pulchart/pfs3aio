@@ -226,6 +226,7 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 {
   ULONG nr, field, i, j, blocknr, blocksdone = 0;
   ULONG extra;
+  ULONG scanned = 0;
   FSIZE oldfilesize = 0;
   ULONG bmseqnr;
   UWORD bmoffset, oldlocknr;
@@ -375,6 +376,7 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 							alloc_data.clean_blocksfree--;
 							alloc_data.alloc_available--;
 							blocksdone++;
+							scanned = 0;
 
 							/* update reference */
 							if (ref)
@@ -418,8 +420,27 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 		/* get ready for next block */
 		bmseqnr = (bmseqnr+1)%(alloc_data.no_bmb);
 		bmoffset = 0;
+
+		/* Safety net: the free counters can claim more space than the
+		 * bitmap actually has (e.g. blocksfree overcounted by one on
+		 * unaligned partitions formatted by earlier versions). Fail the
+		 * allocation after a full fruitless sweep of all bitmap blocks
+		 * instead of scanning forever.
+		 */
+		if (++scanned > alloc_data.no_bmb)
+		{
+#if VERSION23
+			if (ref)
+			{
+				SetDEFileSize(ref->direntry, oldfilesize, g);
+				MakeBlockDirty ((struct cachedblock *)ref->dirblock, g);
+			}
+#endif
+			FreeBlocksAC (achain, blocksdone, freeanodes, g);
+			return DOSFALSE;
+		}
 	}
-	
+
 alloc_end:
 
 	/* finish by saving anode and updating roving ptr */

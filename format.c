@@ -453,7 +453,13 @@ static rootblock_t *MakeRootBlock (DSTR diskname, ULONG rsblocks, globaldata *g)
 	rbl->firstreserved = 2;
 	rbl->lastreserved = rescluster*numreserved + rbl->firstreserved - 1;
 	rbl->reserved_free = numreserved;
-	rbl->blocksfree = (g->geom->dg_TotalSectors >> g->blocklogshift) - rescluster*numreserved - rbl->firstreserved;
+	/* usable blocks = lastblock - firstblock + 1 (NOT
+	 * dg_TotalSectors >> blocklogshift, which counts one block too many
+	 * when the partition start is not aligned to the logical block
+	 * size; the bitmap would then contain a phantom block past the end
+	 * of the partition)
+	 */
+	rbl->blocksfree = (g->lastblock - g->firstblock + 1) - rescluster*numreserved - rbl->firstreserved;
 	rbl->alwaysfree = rbl->blocksfree/20;
 	// rbl->roving_ptr = 0;
 

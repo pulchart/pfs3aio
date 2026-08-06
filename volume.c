@@ -628,7 +628,13 @@ struct volumedata *MakeVolumeData (struct rootblock *rootblock, globaldata *g)
 	volume->diskstate       = ID_VALIDATED;
 
 	/* these could be put in rootblock @@ see also HD version */
-	volume->numblocks       = g->geom->dg_TotalSectors >> g->blocklogshift;
+	/* usable blocks, accounting for the alignment of the partition
+	 * start to the logical block size (SetPartitionLimits): with an
+	 * unaligned partition, dg_TotalSectors >> blocklogshift counts one
+	 * block too many, and the allocator would hand out a phantom block
+	 * beyond g->lastblock.
+	 */
+	volume->numblocks       = g->lastblock - g->firstblock + 1;
 	volume->bytesperblock   = BLOCKSIZE;
 	volume->rescluster      = rootblock->reserved_blksize / volume->bytesperblock;
 
