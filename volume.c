@@ -1254,7 +1254,16 @@ static void SetPartitionLimits(globaldata *g)
 		return;	
 
 	g->firstblocknative = g->dosenvec->de_LowCyl * g->geom->dg_CylSectors;
-	g->lastblocknative = (g->dosenvec->de_HighCyl + 1) * g->geom->dg_CylSectors;
+	/* saturate instead of wrapping at 2^32 sectors (2TB with 512-byte
+	 * sectors): a wrapped end made lastblock ~0xFFFFFFFF, which
+	 * disabled the partition bounds checks entirely (losing the last
+	 * partial block by saturating is the safe direction)
+	 */
+	if (g->geom->dg_CylSectors &&
+		(g->dosenvec->de_HighCyl + 1) > 0xFFFFFFFFUL / g->geom->dg_CylSectors)
+		g->lastblocknative = 0xFFFFFFFFUL;
+	else
+		g->lastblocknative = (g->dosenvec->de_HighCyl + 1) * g->geom->dg_CylSectors;
 	// Align to block size if partition was not already block size aligned.
 	// Pre OS3.2 HDToolbox versions only guarantee up to 2 block alignment.
 	g->firstblocknative += (1 << g->blocklogshift) - 1;
