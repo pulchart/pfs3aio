@@ -286,7 +286,24 @@ void NewVolume (BOOL FORCE, globaldata *g)
 		{
 			if (oldstate)
 				DiskRemoveSequence (g);
-			DiskInsertSequence (rootblock, g);
+			/* Only now, with the old volume updated and removed, is it
+			 * safe to (re)initialize the LRU cache for the new volume's
+			 * reserved block size (InitLRU frees all cached blocks when
+			 * the size differs).
+			 */
+			if (InitLRU (g, rootblock->reserved_blksize))
+			{
+				DiskInsertSequence (rootblock, g);
+			}
+			else
+			{
+				/* treat like an unmountable disk (cf. GetCurrentRoot
+				 * nrd_error) */
+				FreeBufmem (rootblock, g);
+				g->disktype = ID_NOT_REALLY_DOS;
+				CreateInputEvent (TRUE, g);
+				g->currentvolume = NULL;
+			}
 		}
 	}
 	else
@@ -1148,10 +1165,14 @@ static BOOL GetCurrentRoot(struct rootblock **rootblock, globaldata *g)
 		goto nrd_error;
 	}
 
-	if (!InitLRU(g, rbp->reserved_blksize))
-	{
-		goto nrd_error;
-	}
+	/* NOTE: InitLRU is deliberately NOT called here. GetCurrentRoot may
+	 * run while another volume is still current and dirty (disk swap,
+	 * RequestCurrentVolumeBack polling): reinitializing the LRU for a
+	 * different reserved block size would free that volume's cached
+	 * blocks - including dirty ones - and its update would then write
+	 * from freed memory. NewVolume calls InitLRU after the old volume
+	 * has been removed.
+	 */
 
 	FreeBufmem(rbpt, g);
 	*rootblock = AllocBufmemR (rblsize << BLOCKSHIFT, g);
