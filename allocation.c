@@ -241,7 +241,14 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 	/* Check if allocation possible */
 	if(alloc_data.alloc_available < size)
 		return DOSFALSE;
-	
+
+	/* Keep the directory block of the file being extended cached: the
+	 * updates and anode operations below can cause LRU eviction, and
+	 * ref->direntry points into this block. (Unlocked at end of packet.)
+	 */
+	if (ref)
+		LOCK(ref->dirblock);
+
 	/* check for sufficient clean freespace (freespace that doesn't overlap
 	 * with the current state on disk)
 	 */
@@ -314,6 +321,9 @@ BOOL AllocateBlocksAC (struct anodechain *achain, ULONG size,
 		if (bitmap)
 		{
 		oldlocknr = bitmap->used;
+		/* the bitmap block must survive SaveAnode/AllocAnode/
+		 * UpdateDisk calls inside the scan (LRU eviction) */
+		LOCK(bitmap);
 
 		/* find all empty fields */
 		while (bmoffset < alloc_data.longsperbmb)
