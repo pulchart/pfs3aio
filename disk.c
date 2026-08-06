@@ -1549,6 +1549,8 @@ static ULONG RawReadWrite_DS(BOOL write, UBYTE *buffer, ULONG blocks, ULONG bloc
 {
 	UBYTE cmdbuf[10];
 	ULONG transfer, maxtransfer;
+	UBYTE *io_buffer;
+	ULONG io_blocks, io_blocknr;
 
 	if(blocknr == (ULONG)-1)   // blocknr of uninitialised anode
 		return 1;
@@ -1568,26 +1570,32 @@ retry:
 	if (!maxtransfer) {
 		return ERROR_BAD_NUMBER;
 	}
-	blocks <<= g->blocklogshift;
-	blocknr <<= g->blocklogshift;
-	while (blocks > 0)
+	/* Convert to native blocks in work variables only, so that a retry
+	 * restarts from the unmodified arguments (like RawReadWrite_TD does).
+	 * Retrying with the loop variables would apply blocklogshift twice
+	 * and resume from a half-advanced position.
+	 */
+	io_buffer = buffer;
+	io_blocks = blocks << g->blocklogshift;
+	io_blocknr = blocknr << g->blocklogshift;
+	while (io_blocks > 0)
 	{
-		transfer = min(blocks, maxtransfer);
+		transfer = min(io_blocks, maxtransfer);
 		*((UWORD *)&cmdbuf[0]) = write ? 0x2a00 : 0x2800;
-		*((ULONG *)&cmdbuf[2]) = blocknr;
+		*((ULONG *)&cmdbuf[2]) = io_blocknr;
 		*((ULONG *)&cmdbuf[6]) = transfer << 8;
 		PROFILE_OFF();
-		if (!DoSCSICommand(buffer, transfer << BLOCKNATIVESHIFT, 0, cmdbuf, 10, write ? SCSIF_WRITE : SCSIF_READ, g))
+		if (!DoSCSICommand(io_buffer, transfer << BLOCKNATIVESHIFT, 0, cmdbuf, 10, write ? SCSIF_WRITE : SCSIF_READ, g))
 		{
 			PROFILE_ON();
-			if (ErrorRequest(write, g->scsicmd.scsi_Status, blocknr, transfer, g))
+			if (ErrorRequest(write, g->scsicmd.scsi_Status, io_blocknr, transfer, g))
 				goto retry;
 			return ERROR_NOT_A_DOS_DISK;
 		}
 		PROFILE_ON();
-		buffer += transfer << BLOCKNATIVESHIFT;
-		blocks -= transfer;
-		blocknr += transfer;
+		io_buffer += transfer << BLOCKNATIVESHIFT;
+		io_blocks -= transfer;
+		io_blocknr += transfer;
 	}
 
 	return 0;
