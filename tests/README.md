@@ -25,11 +25,13 @@ apply the fixes and they pass. Covered:
 | `ds_retry_live.c`       | DirectSCSI retry restarts in range instead of re-applying blocklogshift and writing outside the partition |
 | `ds_maxtransfer_live.c` | DirectSCSI maxtransfer in native sectors (a 16 KiB MaxTransfer with 4 KB blocks no longer rounds to 0) |
 | `freeanode_live.c`      | FreeAnode marks the correct anodeblock in non-split mode |
+| `update_cleanup_live.c` | Deferred reserved frees are persisted by a root-only write after the primary commit |
 
 Not covered by a live test: fixes that are one-liners inside large functions
 (e.g. the `numblocks` formula in `NewVolume`) or that are inseparable from the
-AmigaOS runtime (the update/commit, cache, directory and geometry paths). Those
-are covered by the black-box layer below and by code review in the fix PR.
+AmigaOS runtime (the remaining update/commit, cache, directory and geometry
+paths). Those are covered by the black-box layer below and by code review in
+the fix PR.
 
 ## black-box AmiFUSE suite — functional / regression / atomicity
 
