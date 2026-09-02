@@ -1543,7 +1543,7 @@ static SIPTR dd_ReadLink(struct DosPacket *pkt, globaldata * g)
 		 * if found, else the cut position is after the first ':'
 		 * element found, or no prefix was specified.
 		 */
-		prefixptr = rindex(fullname, '/');
+		prefixptr = strrchr(fullname, '/');
 		if (prefixptr)
 			prefixptr++;
 		else if (fullname != (char *)pkt->dp_Arg2)

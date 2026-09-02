@@ -18,6 +18,7 @@ Config (all via environment):
   FI_CRASHN int          hard-exit (simulated power cut) just before the Nth write. 0=off
   FI_FLUSH  0|1          flush every write straight to the image file, so an external
                          SIGKILL (kill -9) also leaves a faithful partial-write image. default off
+  FI_CPU    68000|...    emulated CPU. unset leaves amifuse's hardwired 68020
 
 Emits one machine-readable line to stderr on exit:
   FI-SUMMARY faults=<n> matched=<n> requesters=<n> writes=<n> rc=<n>
@@ -36,6 +37,20 @@ FI_REQ    = int(os.environ.get("FI_REQ", "1"))
 FI_REQCAP = int(os.environ.get("FI_REQCAP", "40"))
 FI_CRASHN = int(os.environ.get("FI_CRASHN", "0"))
 FI_FLUSH  = os.environ.get("FI_FLUSH", "0") == "1"
+FI_CPU    = os.environ.get("FI_CPU", "")
+
+# amifuse hardwires the emulated CPU to 68020 and offers no option for it, so a
+# tier above 68020 could not be tested at all. Same patch tests/m68k/
+# driverbench.py carries. patch_attn_flags() matters here beyond -C 68030:
+# vamos sets AttnFlags to 127 for a 68040, claiming a 68060 that is not there.
+if FI_CPU:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "m68k"))
+    import amifuse.vamos_runner as vr
+    import vamos_cpu
+
+    _vh_setup = vr.VamosHandlerRuntime.setup
+    vr.VamosHandlerRuntime.setup = lambda self, cpu=None: _vh_setup(self, cpu=FI_CPU)
+    vamos_cpu.patch_attn_flags()
 
 import amifuse.scsi_device as sd
 import amifuse.driver_runtime as drt

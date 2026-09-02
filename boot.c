@@ -162,11 +162,69 @@ BOOL debug=FALSE;
 
 /* protos */
 // extern void SAVEDS EntryWithNewStack(void);
-void SAVEDS EntryPoint(void);
+void SAVEDS ASMLINKAGE EntryPoint(void);
 void NormalCommands(struct DosPacket *, globaldata *);
 void HandleSleepMsg (globaldata *g);
 void ReturnPacket(struct DosPacket *, struct MsgPort *, globaldata *);
 static void Quit(globaldata *);
+
+/* Build identity in the version string. Every variant otherwise reports the
+ * same "Professional-File-System-III 20.0", so C:Version and the ROM module
+ * listing cannot tell a gcc build from a vbcc one. Placed right after the
+ * revision because those listings truncate the string.
+ */
+#define PFS_STR2(x) #x
+#define PFS_STR(x) PFS_STR2(x)
+
+#if defined(__VBCC__)
+#define PFS_CC "vbcc"
+#elif defined(__GNUC__)
+#define PFS_CC "gcc" PFS_STR(__GNUC__) "." PFS_STR(__GNUC_MINOR__)
+#else
+#define PFS_CC "cc"
+#endif
+
+/* The makefile passes the tag as bare tokens, never numbers: 040 would be
+ * octal. PFS_TIER is what the build is tuned for; PFS_MIN with PFS_ONLY,
+ * PFS_TOP or PFS_MAX is where it runs. The predefine chain below is the
+ * fallback for a hand build, and it cannot name either: a tier compiled
+ * -m68060 reports itself as 060 whether it is the 68060 build or not.
+ */
+#if defined(PFS_ONLY)
+#define PFS_RANGE "[" PFS_STR(PFS_MIN) "]"
+#elif defined(PFS_TOP)
+#define PFS_RANGE "[" PFS_STR(PFS_MIN) "+]"
+#elif defined(PFS_MAX)
+#define PFS_RANGE "[" PFS_STR(PFS_MIN) "-" PFS_STR(PFS_MAX) "]"
+#else
+#define PFS_RANGE ""
+#endif
+
+#if defined(PFS_TIER)
+#define PFS_CPU PFS_STR(PFS_TIER)
+#elif defined(__mc68080__)
+#define PFS_CPU "080"
+#elif defined(__mc68060__) || defined(__M68060)
+#define PFS_CPU "060"
+#elif defined(__mc68040__) || defined(__M68040)
+#define PFS_CPU "040"
+#elif defined(__mc68020__) || defined(__M68020)
+#define PFS_CPU "020"
+#else
+#define PFS_CPU "000"
+#endif
+
+/* Origin: which fork and which source, the tag if HEAD carries one and the
+ * commit otherwise. Absent from a build made with upstream's makefile, which
+ * passes none of these.
+ */
+#if defined(PFS_FORK)
+#define PFS_ORIGIN "[" PFS_STR(PFS_FORK) "/" PFS_STR(PFS_REF) "]"
+#else
+#define PFS_ORIGIN ""
+#endif
+
+#define PFS_BUILD "[" PFS_CC "/" PFS_CPU "]" PFS_RANGE PFS_ORIGIN " "
 
 /* vars */
 #ifdef BETAVERSION
@@ -174,10 +232,10 @@ CONST UBYTE version[] = "$VER: PFS-III " REVISION " BETA (" REVDATE ") "
 	"written by Michiel Pelt and copyright (c) 1994-2012 Peltin BV";
 #else
 #if MULTIUSER
-CONST UBYTE version[] = "$VER: " "Professional-File-System-III " REVISION " MULTIUSER-VERSION (" REVDATE ") "
+CONST UBYTE version[] = "$VER: " "Professional-File-System-III " REVISION " " PFS_BUILD "MULTIUSER-VERSION (" REVDATE ") "
 	 "written by Michiel Pelt and copyright (c) 1994-2012 Peltin BV";
 #else
-CONST UBYTE version[] = "$VER: " "Professional-File-System-III " REVISION " PFS3AIO-VERSION (" REVDATE ") "
+CONST UBYTE version[] = "$VER: " "Professional-File-System-III " REVISION " " PFS_BUILD "PFS3AIO-VERSION (" REVDATE ") "
 	 "written by Michiel Pelt and copyright (c) 1994-2012 Peltin BV";
 #endif
 #endif
@@ -222,7 +280,7 @@ static UBYTE debugbuf[120];
 /*                                MAIN                                */
 /**********************************************************************/
 
-void SAVEDS EntryPoint (void)
+void SAVEDS ASMLINKAGE EntryPoint (void)
 {
 	/* globals */
 	struct globaldata *g;

@@ -1,0 +1,110 @@
+# Build pfs3aio with one gcc toolchain, one binary per target CPU in tiers.mk.
+#
+#   make -f makefile.gcc [OUTDIR=dir] [TIERS="68000 68060"] [AMIGA_PREFIX=/path]
+#
+# Driven by GNUmakefile, which runs it once per toolchain. ./makefile is
+# upstream's and builds a single -m68000 binary; this one is ours.
+
+.DEFAULT_GOAL := all
+
+NOWDATE := "\"$(shell date "+%-d.%-m.%Y")\""
+NOWTIME := "\"$(shell date "+%T")\""
+
+# First existing amiga-gcc prefix wins. Override with AMIGA_PREFIX=/path
+# or CC=/path/to/m68k-amigaos-gcc.
+AMIGA_PREFIX ?= $(firstword $(wildcard $(HOME)/opt/m68k-amigaos /opt/amiga))
+# CC carries a built-in default ("cc"), so ?= would never fire here.
+ifeq ($(origin CC),default)
+CC := $(AMIGA_PREFIX)/bin/m68k-amigaos-gcc
+endif
+
+CPPFLAGS = -I.
+LIBS = -nostdlib -lamiga -lgcc -lnix13 -lnix -s
+
+# -fno-optimize-sibling-calls: amiga-gcc 13.x with -mregparm=3 miscompiles
+# the RawRead/RawWrite tail calls (4th argument in d2 restored before the
+# jump, never loaded), so every raw access gets blocknr=0. Not triggered by
+# amiga-gcc 6.x; kept for parity with upstream, costs about 60 bytes.
+CFLAGS_COMMON = -Os -fbbb=+ -noixemul -fomit-frame-pointer -nostartfiles -mregparm=3 -fno-optimize-sibling-calls -msmall-code -s \
+	-DMIN_LIB_VERSION=33 -DKSWRAPPER=1 \
+	-DSCSIDIRECT=1 -DNSD=1 -DTD64=1 -DTRACKDISK=1 \
+	-DLARGE_FILE_SIZE=0 -DEXTRAPACKETS=1 -DSIZEFIELD -DDELDIR=1 \
+	-DMULTIUSER=0 -DPROTECTION=0 -DVERSION23=1 -DROLLOVER=1 \
+	-DLIMIT_MAXTRANSFER=0x20000 -DUNSAFEQUIT=1 \
+	-DREVDATE=$(NOWDATE) -DREVTIME=$(NOWTIME) \
+	-DDETECTDEBUG=0 \
+	$(EXTRA_CFLAGS)
+
+include tiers.mk
+
+# Not dist/: that holds the published binaries, which are tracked.
+OUTDIR = build
+OBJDIR = $(OUTDIR)/obj
+
+OBJ_NAMES = startup boot init assroutines messages volume lock dostohandlerinterface anodes directory lru disk \
+	update allocation CheckAccess diskchange resethandler kswrapper format fsresource end
+
+# Assembly for the instruction audit. Generated with the same flags as the
+# objects, so what is scanned is what ships. Instruction counts must come from
+# here and not from objdump, which decodes jump tables as instructions.
+CSRC_NAMES = $(filter-out startup end,$(OBJ_NAMES))
+
+LEGACY_OBJECTS = $(addsuffix .o,$(OBJ_NAMES)) rawdofmt.o debug.o
+LEGACY_TARGETS = pfs3aio
+
+# Everything a tier needs, from its name and the table in tiers.mk.
+#
+include version.mk
+
+define TIER_RULES
+CFLAGS_$(1) = $$(CFLAGS_COMMON) $$(TIER_CFLAGS_$(1)) $$(TIER_TAG_$(1))
+OUTDIR_$(1) = $$(OUTDIR)/$(1)
+OBJDIR_$(1) = $$(OBJDIR)/$(1)
+ASMDIR_$(1) = $$(OUTDIR)/asm/$(1)
+TARGET_$(1) = $$(OUTDIR_$(1))/pfs3aio
+OBJS_$(1) = $$(addprefix $$(OBJDIR_$(1))/,$$(addsuffix .o,$$(OBJ_NAMES)))
+ASMS_$(1) = $$(addprefix $$(ASMDIR_$(1))/,$$(addsuffix .s,$$(CSRC_NAMES)))
+
+$$(TARGET_$(1)): $$(OBJS_$(1)) | $$(OUTDIR_$(1))
+	$$(CC) -o $$@ $$^ $$(CFLAGS_$(1)) $$(LIBS)
+
+$$(OBJDIR_$(1))/%.o: %.c | $$(OBJDIR_$(1))
+	$$(CC) $$(CFLAGS_$(1)) $$(CPPFLAGS) -c -o $$@ $$<
+
+$$(OBJDIR_$(1))/%.o: %.s | $$(OBJDIR_$(1))
+	$$(CC) $$(CFLAGS_$(1)) $$(CPPFLAGS) -c -o $$@ $$<
+
+$$(OBJDIR_$(1))/boot.o: $$(ORIGINSTAMP)
+
+$$(OBJDIR_$(1))/dostohandlerinterface.o: dostohandlerinterface.c dd_support.c dd_funcs.c | $$(OBJDIR_$(1))
+	$$(CC) $$(CFLAGS_$(1)) $$(CPPFLAGS) -c -o $$@ dostohandlerinterface.c
+
+$$(ASMDIR_$(1))/%.s: %.c | $$(ASMDIR_$(1))
+	$$(CC) $$(CFLAGS_$(1)) $$(CPPFLAGS) -S -o $$@ $$<
+
+$$(OUTDIR_$(1)) $$(OBJDIR_$(1)) $$(ASMDIR_$(1)):
+	mkdir -p $$@
+endef
+
+$(foreach t,$(TIERS),$(eval $(call TIER_RULES,$(t))))
+
+.PHONY: all asm clean check-cc help
+
+all: check-cc $(foreach t,$(TIERS),$(TARGET_$(t)))
+
+asm: check-cc $(foreach t,$(TIERS),$(ASMS_$(t)))
+
+help:
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "Targets:"
+	@echo "  all      Build pfs3aio for $(TIERS) into dist/"
+	@echo "  asm      Emit assembly for the instruction audit into dist/asm/"
+	@echo "  clean    Remove dist/ and legacy root-level build artifacts"
+	@echo "  help     Show this help text"
+
+check-cc:
+	@command -v $(CC) >/dev/null || { echo "ERROR: compiler not found: $(CC)"; exit 1; }
+
+clean:
+	rm -rf $(OUTDIR) $(LEGACY_TARGETS) $(LEGACY_OBJECTS)

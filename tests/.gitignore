@@ -5,3 +5,8 @@ fixtures/
 # compiled live-test binaries and extracted source
 live/gen/
 live/*_live
+# and the emulated 68k ones
+m68k/gen/
+m68k/*_m68k
+# python bytecode from the emulator wrappers
+__pycache__/
