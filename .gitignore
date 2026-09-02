@@ -2,6 +2,10 @@
 *.map
 *.out
 *.info
+build/
+compare/
+dist-vbcc/
 *.vs
-pfs3aio*
 boot
+# upstream's makefile builds this into the tree root
+/pfs3aio
