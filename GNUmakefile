@@ -82,7 +82,7 @@ GCC_TOOLCHAINS = gcc6 gcc13 gcc15 gcc16
 TOOLCHAINS = $(GCC_TOOLCHAINS) vbcc
 
 .PHONY: all $(TOOLCHAINS) sizes sibcall-proof install \
-	$(addprefix asm-,$(TOOLCHAINS)) check-68060 verify bench driverbench dist \
+	$(addprefix asm-,$(TOOLCHAINS)) check-68060 check-linea verify bench driverbench dist \
 	clean help
 
 all: $(TOOLCHAINS) sizes
@@ -100,7 +100,8 @@ help:
 	@echo "  install         Build every toolchain, install as pfs3aio.<tc> per build"
 	@echo "  dist            Same set into $(DIST_DIR)/, and the README table"
 	@echo "  check-68060     Static audit: instructions the 68060 does not implement"
-	@echo "  verify          check-68060 plus format, write and read back under emulation"
+	@echo "  check-linea     Static audit: 68080 instructions in the line-A space"
+	@echo "  verify          both audits plus format, write and read back under emulation"
 	@echo "  bench           Synthetic workload, every toolchain and build"
 	@echo "  driverbench     The real driver: format, write, read, list, create"
 	@echo "  clean           Remove $(OUT)/"
@@ -162,9 +163,24 @@ check-68060: $(addprefix asm-,$(TOOLCHAINS))
 	done; \
 	[ $$rc -eq 0 ] && echo "== 68060: all builds clean ==" || { echo "== 68060: UNSAFE builds above =="; exit 1; }
 
-# Functional check of every build under emulation, plus the static 68060 audit
-# that emulation cannot do. Needs amifuse and rdbtool.
-verify: all check-68060
+# The 68080 cannot be emulated either. Only 68080la is meant to have line-A.
+check-linea: $(addprefix asm-,$(TOOLCHAINS))
+	@rc=0; for tc in $(TOOLCHAINS); do \
+		for cpu in $(TIERS); do \
+			d=$(OUT)/$$tc/asm/$$cpu; \
+			[ -d "$$d" ] || continue; \
+			if [ "$$cpu" = 68080la ]; then \
+				sh tests/check-linea.sh "$$d" "$$tc/$$cpu" || true; \
+			else \
+				sh tests/check-linea.sh "$$d" "$$tc/$$cpu" || rc=1; \
+			fi; \
+		done; \
+	done; \
+	[ $$rc -eq 0 ] && echo "== line-A: only the 68080la build has any ==" || { echo "== line-A: builds above carry it and must not =="; exit 1; }
+
+# Functional check of every build under emulation, plus the static audits that
+# emulation cannot do. Needs amifuse and rdbtool.
+verify: all check-68060 check-linea
 	sh tests/m68k/variants.sh $(OUT)
 
 # Emulated cost of each build: bench is a synthetic workload, driverbench the

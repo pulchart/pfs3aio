@@ -13,6 +13,8 @@ Every binary names its own build in the `$VER` string, readable with `Version <f
 
 **These are not official builds and they are untested. Use them at your own risk.** They exist so the differences between the compilers and the target CPUs can be tried on real hardware. How a build behaves on your machine, and anything you notice about the builds themselves, is welcome in [issues here](https://github.com/pulchart/pfs3aio/issues), and a fix is best sent as a pull request. A bug in PFS3 itself belongs [upstream](https://github.com/tonioni/pfs3aio/issues), once it reproduces with an official build and is not down to the compiler.
 
+**Apollo 68080:** of the two, take `68080`. The `68080la` build adds the line-A instruction group, which the core has only on scores 10280 to 10904; on any other one it alerts `8000000A` at mount.
+
 <!-- dist-table -->
 ## GCC 13.4
 
@@ -90,7 +92,7 @@ Every binary names its own build in the `$VER` string, readable with `Version <f
 ```sh
 make              # every toolchain, one binary per target CPU, into compare/
 make install      # side by side as pfs3aio.<toolchain> under /opt/AmigaOS/pfs/v20.0
-make verify       # format, write, read back, plus the 68060 instruction audit
+make verify       # format, write, read back, plus the instruction audits
 make -f makefile  # upstream's own single-binary build, untouched
 ```
 
