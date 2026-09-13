@@ -206,9 +206,10 @@ $VER: Professional-File-System-III 20.0 [gcc16.1/030][020-040][jpu/e4bb995] PFS3
 | `68030` | `-m68030` | 68020 to 68040 | `[<cc>/030][020-040]` |
 | `68040` | `-m68020-40` | 68020 to 68040 | `[<cc>/040][020-040]` |
 | `68060` | `-m68060` | 68020 to 68060 | `[<cc>/060][020+]` |
-| `68080` | `-m68080` | 68080 only | `[<cc>/080][080]` |
+| `68080` | `-m68060 -mtune=68080 -Wa,-m68080` | 68080 only | `[<cc>/080][080]` |
+| `68080la` | `-m68080` | 68080 only, line-A | `[<cc>/080la][080]` |
 
-`<cc>` is `gcc6.5`, `gcc13.4`, `gcc15.2`, `gcc16.1` or `vbcc`. The first field is what the build is tuned for, the second where it runs. The range alone would not identify a binary: `68030` and `68040` share `020-040`, `68020` and `68060` share `020+`.
+`<cc>` is `gcc6.5`, `gcc13.4`, `gcc15.2`, `gcc16.1` or `vbcc`. The first field is what the build is tuned for, the second where it runs. The range alone would not identify a binary: `68030` and `68040` share `020-040`, `68020` and `68060` share `020+`, `68080` and `68080la` share `080`.
 
 The last bracket is the origin, `[<fork>/<tag or commit>]`, the tag when the build came from a tagged commit. A build made with upstream's `makefile` carries no origin bracket, since it passes none of these defines.
 
@@ -273,7 +274,7 @@ Every toolchain boots here once the build avoids `-m68020`, so the choice of com
 
 ## Apollo 68080
 
-The AC68080 runs everything from the 68000 to the 68060 except the MMU instructions, so the `68060` build works on it. The `68080` build is the one that uses what the core adds, and only gcc 6.5 can produce it: 13.4, 15.2 and 16.1 reject `-m68080`, `-mcpu=68080` and `-march=68080` alike, and vbcc's `-cpu=68080` emits its 68060 code with a different `machine` directive.
+The AC68080 runs everything from the 68000 to the 68060 except the MMU instructions, so the `68060` build works on it. Two builds use what the core adds, `68080` and `68080la`, and only gcc 6.5 can produce either: 13.4, 15.2 and 16.1 reject `-m68080`, `-mcpu=68080` and `-march=68080` alike, and vbcc's `-cpu=68080` emits its 68060 code with a different `machine` directive.
 
 vbcc's switch is not a target. Its code generator has no 68080 model: `-cpu=68080` gives byte-identical output to `-cpu=68020` and `-cpu=68060`, only `-cpu=68040` differs, and any number is accepted, `-cpu=99999` included. The value is forwarded into the `machine` directive for vasm, which does know the 68080, but what it implements there is AMMX, `load`, `store`, `vperm` and the E registers. The integer extensions gcc emits are rejected under `-m68080`: `clr.q`, `mov3q.l`, `mvs`, `mvz`, `moviw.l` and `dbral` all fail to assemble.
 
@@ -295,11 +296,26 @@ What `-m68080` puts in the binary, counted over `directory.c`, `disk.c`, `anodes
 
 `dbral` is the exception: it assembles to `51cf`, the ordinary `DBF` encoding, and only the counter width differs. That one would not trap on a 68060, it would wrap at 16 bits.
 
+### The line-A group is not usable
+
+`AC68080PRM.pdf` p.10 marks the whole group "do not use, only available on scores 10280 to 10904". A core outside that range alerts `8000000A`, which is what an IceDrake V4 does. The `20260902-1` binary built with `-m68080` holds 565 line-A opcodes against 0 in its `68060` build, from offset `$1e4` on, so it faults at startup.
+
+gcc 6.5 has no switch that drops the group, but `-mtune=68080` emits what the core adds without it:
+
+| build | flags | carries |
+|---|---|---|
+| `68080` | `-m68060 -mtune=68080 -Wa,-m68080` | `cmpiw.l`, `addiw.l`, `dbral`, 64-bit `mulu.l` |
+| `68080la` | `-m68080` | those plus the line-A group |
+
+`-Wa,-m68080` is needed because the assembler refuses `cmpiw.l` under `-m68060`. Both builds are 68080 only: `cmpiw.l` and the 64-bit multiply fault on a 68060.
+
+`make check-linea` scans the generated assembly of every build and expects a count only from `68080la`.
+
 No AMMX: not one E-register or SIMD instruction. `-m68080` uses the integer extensions only, so AMMX needs intrinsics or assembly.
 
 `-m68080` selects the base multilib, so libgcc and libnix come from the plain 68000 build. The driver calls almost nothing from them, since the 68080 has the division and multiplication in hardware.
 
-The build is the smallest gcc 6.5 produces, 63744 bytes against 64812 for its `68060` build, from the shorter immediate forms.
+`68080la` is the smallest gcc 6.5 produces, 63748 bytes, from the shorter immediate forms; `68080` is 64504 and the `68060` build 64816.
 
 ### Counting instructions: use the compiler, not objdump
 

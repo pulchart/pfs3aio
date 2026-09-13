@@ -31,9 +31,10 @@ def tier_field(field, tier):
 
 def runs_on(tier):
     lo, hi = tier_field("MINCPU", tier), tier_field("MAXCPU", tier)
-    if lo == hi:
-        return "%s only" % lo
-    return "%s to %s" % (lo, hi)
+    out = "%s only" % lo if lo == hi else "%s to %s" % (lo, hi)
+    # TIER_NOTE_<tier> separates two builds naming the same CPU.
+    note = tier_field("NOTE", tier)
+    return "%s, %s" % (out, note) if note else out
 
 
 def brackets(path):

@@ -7,7 +7,7 @@
 TIERS_MK=${TIERS_MK:-$ROOT/tiers.mk}
 
 tiers() {	# every tier, in table order
-	sed -n 's/^TIER_CFLAGS_\([0-9][0-9]*\)[ 	]*=.*/\1/p' "$TIERS_MK"
+	sed -n 's/^TIER_CFLAGS_\([0-9][0-9a-z]*\)[ 	]*=.*/\1/p' "$TIERS_MK"
 }
 
 tier_get() {	# $1=field $2=tier
@@ -30,8 +30,9 @@ tier_builds() {	# $1=tier $2=toolchain
 	return 0
 }
 
-# Tier and CPU names are both five-digit numbers, so a numeric comparison is
-# also the right ordering: 68000 < 68020 < 68030 < 68040 < 68060.
+# CPU names are five-digit numbers, so a numeric comparison is also the right
+# ordering: 68000 < 68020 < 68030 < 68040 < 68060. Tier names are those plus an
+# optional suffix, 68080la, which is why only MINCPU is compared here.
 tier_runs_on() {	# $1=tier $2=emulated cpu
 	[ "$(tier_mincpu "$1")" -le "$2" ]
 }
