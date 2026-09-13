@@ -34,7 +34,8 @@ Every binary names its own build in the `$VER` string, readable with `Version <f
 | `68030` | 68020 to 68040 | `[gcc6.5/030][020-040][jpu/20260902-1]` | 64776 | [pfs3aio.gcc6][gcc6-68030] |
 | `68040` | 68020 to 68040 | `[gcc6.5/040][020-040][jpu/20260902-1]` | 65188 | [pfs3aio.gcc6][gcc6-68040] |
 | `68060` | 68020 to 68060 | `[gcc6.5/060][020+][jpu/20260902-1]` | 64816 | [pfs3aio.gcc6][gcc6-68060] |
-| `68080` | 68080 only | `[gcc6.5/080][080][jpu/20260902-1]` | 63744 | [pfs3aio.gcc6][gcc6-68080] |
+| `68080` | 68080 only | `[gcc6.5/080][080][jpu/20260913-1]` | 64504 | [pfs3aio.gcc6][gcc6-68080] |
+| `68080la` | 68080 only, line-A | `[gcc6.5/080la][080][jpu/20260913-1]` | 63748 | [pfs3aio.gcc6][gcc6-68080la] |
 
 ## GCC 15.2
 
@@ -72,7 +73,8 @@ Every binary names its own build in the `$VER` string, readable with `Version <f
 [gcc6-68030]: https://raw.githubusercontent.com/pulchart/pfs3aio/20260902-1/dist/68030/pfs3aio.gcc6
 [gcc6-68040]: https://raw.githubusercontent.com/pulchart/pfs3aio/20260902-1/dist/68040/pfs3aio.gcc6
 [gcc6-68060]: https://raw.githubusercontent.com/pulchart/pfs3aio/20260902-1/dist/68060/pfs3aio.gcc6
-[gcc6-68080]: https://raw.githubusercontent.com/pulchart/pfs3aio/20260902-1/dist/68080/pfs3aio.gcc6
+[gcc6-68080]: https://raw.githubusercontent.com/pulchart/pfs3aio/20260913-1/dist/68080/pfs3aio.gcc6
+[gcc6-68080la]: https://raw.githubusercontent.com/pulchart/pfs3aio/20260913-1/dist/68080la/pfs3aio.gcc6
 [gcc15-68000]: https://raw.githubusercontent.com/pulchart/pfs3aio/20260902-1/dist/68000/pfs3aio.gcc15
 [gcc15-68020]: https://raw.githubusercontent.com/pulchart/pfs3aio/20260902-1/dist/68020/pfs3aio.gcc15
 [gcc15-68030]: https://raw.githubusercontent.com/pulchart/pfs3aio/20260902-1/dist/68030/pfs3aio.gcc15
