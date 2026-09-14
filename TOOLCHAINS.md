@@ -298,7 +298,7 @@ What `-m68080` puts in the binary, counted over `directory.c`, `disk.c`, `anodes
 
 ### The line-A group is not usable
 
-`AC68080PRM.pdf` p.10 marks the whole group "do not use, only available on scores 10280 to 10904". A core outside that range alerts `8000000A`, which is what an IceDrake V4 does. The `20260902-1` binary built with `-m68080` holds 565 line-A opcodes against 0 in its `68060` build, from offset `$1e4` on, so it faults at startup.
+`AC68080PRM.pdf` p.10 marks the whole group "do not use, only available on scores 10280 to 10904", so a core outside that range faults on it: on an IceDrake V4 a fat95 build using `clr.q` and `movs.b` fails with `8000000A`. The `20260902-1` binary built with `-m68080` holds 565 line-A opcodes against 0 in its `68060` build, from offset `$1e4` on, so it faults at startup.
 
 gcc 6.5 has no switch that drops the group, but `-mtune=68080` emits what the core adds without it:
 

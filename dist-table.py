@@ -24,7 +24,7 @@ END = "<!-- /dist-table -->"
 
 
 def tier_field(field, tier):
-    pat = re.compile(r"^TIER_%s_%s\s*=\s*(\S+)" % (field, tier), re.M)
+    pat = re.compile(r"^TIER_%s_%s\s*=\s*(.+?)\s*$" % (field, tier), re.M)
     m = pat.search(open(TIERS_MK).read())
     return m.group(1) if m else None
 
@@ -34,7 +34,7 @@ def runs_on(tier):
     out = "%s only" % lo if lo == hi else "%s to %s" % (lo, hi)
     # TIER_NOTE_<tier> separates two builds naming the same CPU.
     note = tier_field("NOTE", tier)
-    return "%s, %s" % (out, note) if note else out
+    return "%s (%s)" % (out, note) if note else out
 
 
 def brackets(path):
