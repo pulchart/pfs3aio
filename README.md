@@ -13,8 +13,6 @@ Every binary names its own build in the `$VER` string, readable with `Version <f
 
 **These are not official builds and they are untested. Use them at your own risk.** They exist so the differences between the compilers and the target CPUs can be tried on real hardware. How a build behaves on your machine, and anything you notice about the builds themselves, is welcome in [issues here](https://github.com/pulchart/pfs3aio/issues), and a fix is best sent as a pull request. A bug in PFS3 itself belongs [upstream](https://github.com/tonioni/pfs3aio/issues), once it reproduces with an official build and is not down to the compiler.
 
-**Apollo 68080:** of the two, take `68080`. The `68080la` build adds the line-A instruction group, which the core has only on scores 10280 to 10904; on any other one it alerts `8000000A` at mount.
-
 <!-- dist-table -->
 ## GCC 13.4
 
@@ -34,8 +32,8 @@ Every binary names its own build in the `$VER` string, readable with `Version <f
 | `68030` | 68020 to 68040 | `[gcc6.5/030][020-040][jpu/20260902-1]` | 64776 | [pfs3aio.gcc6][gcc6-68030] |
 | `68040` | 68020 to 68040 | `[gcc6.5/040][020-040][jpu/20260902-1]` | 65188 | [pfs3aio.gcc6][gcc6-68040] |
 | `68060` | 68020 to 68060 | `[gcc6.5/060][020+][jpu/20260902-1]` | 64816 | [pfs3aio.gcc6][gcc6-68060] |
-| `68080` | 68080 only | `[gcc6.5/080][080][jpu/20260913-1]` | 64504 | [pfs3aio.gcc6][gcc6-68080] |
-| `68080la` | 68080 only, line-A | `[gcc6.5/080la][080][jpu/20260913-1]` | 63748 | [pfs3aio.gcc6][gcc6-68080la] |
+| `68080` | 68080 only (no Line-A) | `[gcc6.5/080][080][jpu/20260913-1]` | 64504 | [pfs3aio.gcc6][gcc6-68080] |
+| `68080la` | 68080 only (with Line-A) | `[gcc6.5/080la][080][jpu/20260913-1]` | 63748 | [pfs3aio.gcc6][gcc6-68080la] |
 
 ## GCC 15.2
 
