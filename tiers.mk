@@ -62,9 +62,10 @@ TIER_MAXCPU_68060 = 68060
 TIER_MAXCPU_68080 = 68080
 TIER_MAXCPU_68080la = 68080
 
-# Appended to the "runs on" column of the README table, where MINCPU and
+# Bracketed after the "runs on" column of the README table, where MINCPU and
 # MAXCPU alone cannot tell two builds for the same CPU apart.
-TIER_NOTE_68080la = line-A
+TIER_NOTE_68080 = no Line-A
+TIER_NOTE_68080la = with Line-A
 
 # Highest CPU Musashi implements, so the harnesses know which tiers they
 # cannot run at all.
