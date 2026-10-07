@@ -30,7 +30,7 @@ STAMP_RE = re.compile(r"[A-Za-z0-9._-]+$")
 # Column order; a toolchain not listed goes last, alphabetically.
 ORDER = ["gcc13", "gcc6", "gcc15", "gcc16", "vbcc"]
 
-INTRO = "Green builds are the ones I use. Grey ones are compiled but not used by me."
+LEGEND = "_Green tags (builds) are the ones I commonly use._"
 
 
 def die(msg):
@@ -167,9 +167,7 @@ def main():
 
     if not os.path.isdir(a.dist):
         die("no such directory: %s" % a.dist)
-    intro = os.path.join(NOTES_DIR, a.tag + ".md")
-    if not os.path.isfile(intro):
-        die("no %s" % intro)
+    news = os.path.join(NOTES_DIR, a.tag + ".md")
 
     rs = rows(a.dist)
     for r in rs:
@@ -192,7 +190,10 @@ def main():
     for r in mine:
         shutil.copy2(r["path"], os.path.join(out, r["asset"]))
 
-    body = open(intro).read().rstrip("\n") + "\n\n" + INTRO + "\n\n## Downloads\n\n" + render(a.tag, rs) + "\n"
+    # "News" only when release-notes/<tag>.md has something to say.
+    text = open(news).read().strip() if os.path.isfile(news) else ""
+    body = ("## News\n\n" + text + "\n\n" if text else "") \
+        + "## Downloads\n\n" + LEGEND + "\n\n" + render(a.tag, rs) + "\n"
     notes = os.path.join(out, "notes.md")
     with open(notes, "w") as f:
         f.write(body)
