@@ -30,7 +30,7 @@ STAMP_RE = re.compile(r"[A-Za-z0-9._-]+$")
 # Column order; a toolchain not listed goes last, alphabetically.
 ORDER = ["gcc13", "gcc6", "gcc15", "gcc16", "vbcc"]
 
-LEGEND = "_Green tags (builds) are the ones I commonly use._"
+LEGEND = "_Green: the builds I use most._"
 
 
 def die(msg):
