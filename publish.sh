@@ -50,7 +50,6 @@ run() {
 git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && \
 	die "tag $TAG exists, pass the next sequence"
 [ -f release-table.py ] || die "no release-table.py"
-[ -f "release-notes/$TAG.md" ] || die "no release-notes/$TAG.md"
 
 echo "== publishing $TAG from $(git rev-parse --short HEAD) on $BRANCH"
 
