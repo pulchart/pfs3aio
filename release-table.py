@@ -5,11 +5,11 @@
 #   python3 release-table.py <tag> [--dist DIR] [--out DIR]
 #
 # Every binary in DIST is copied to OUT/<tag>/ as
-# pfs3aio-<stamp>-<tier>-<toolchain>, where <stamp> is the tag in the binary's
-# own $VER string, so a build carried over from an earlier tag keeps that tag's
-# name. The release is complete in itself and its table links to its own
-# assets. At least one binary must carry <tag>. Columns come from the binaries
-# and from tiers.mk, never from a second copy of the naming rules.
+# pfs3aio-<tag>-<tier>-<toolchain>, and the table links to those assets. A
+# release is always a full rebuild: every binary must carry [<fork>/<tag>] in
+# its own $VER string, so one left over from an earlier build is refused.
+# Columns come from the binaries and from tiers.mk, never from a second copy of
+# the naming rules.
 #
 # Nothing is created on GitHub: the gh command is printed, not run.
 
@@ -17,7 +17,6 @@ import argparse
 import os
 import re
 import shutil
-import subprocess
 import sys
 
 REPO = "pulchart/pfs3aio"
@@ -94,12 +93,6 @@ def ref_of(bracket):
     return m.group(1)
 
 
-def tag_exists(name):
-    r = subprocess.run(["git", "rev-parse", "-q", "--verify", "refs/tags/" + name],
-                       capture_output=True, cwd=HERE)
-    return r.returncode == 0
-
-
 def rows(dist):
     out = []
     for tier in sorted(os.listdir(dist)):
@@ -170,12 +163,12 @@ def main():
     news = os.path.join(NOTES_DIR, a.tag + ".md")
 
     rs = rows(a.dist)
+    if not rs:
+        die("no binaries in %s" % a.dist)
     for r in rs:
-        if r["stamp"] != a.tag and not tag_exists(r["stamp"]):
-            die("%s carries [%s], which is neither %s nor an existing tag; "
-                "its link would be dead" % (r["path"], r["stamp"], a.tag))
-    if not any(r["stamp"] == a.tag for r in rs):
-        die("no binary in %s carries [<fork>/%s]" % (a.dist, a.tag))
+        if r["stamp"] != a.tag:
+            die("%s carries [%s], not %s; rebuild everything with make dist PFS_REF=%s"
+                % (r["path"], r["stamp"], a.tag, a.tag))
     mine = rs
     names = [r["asset"] for r in rs]
     if len(set(names)) != len(names):
@@ -198,8 +191,7 @@ def main():
     with open(notes, "w") as f:
         f.write(body)
 
-    print("%s: %d assets staged in %s, %d of them stamped %s"
-          % (a.tag, len(mine), out, sum(r["stamp"] == a.tag for r in rs), a.tag))
+    print("%s: %d assets staged in %s" % (a.tag, len(mine), out))
     for r in mine:
         n = os.path.getsize(os.path.join(out, r["asset"]))
         warn = "  (%d chars, FFS limit %d)" % (len(r["asset"]), FFS_NAME_MAX) \
