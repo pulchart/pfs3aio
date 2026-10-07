@@ -7,7 +7,7 @@ is patched here. The emulator fixes and the cycle counter come from
 tests/m68k/vamos_cpu.py.
 
     BENCH_CPU=68000 python3 tests/m68k/driverbench.py write img.hdf \
-        --file F --in payload.bin --driver compare/gcc6/68000/pfs3aio
+        --file F --in payload.bin --driver compare/gcc6/000/pfs3aio
 
 Emits to stderr:
     DRIVERBENCH cpu=<cpu> calls=<n> cycles=<n> rc=<n>

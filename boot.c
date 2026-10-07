@@ -188,7 +188,7 @@ static void Quit(globaldata *);
  * octal. PFS_TIER is what the build is tuned for; PFS_MIN with PFS_ONLY,
  * PFS_TOP or PFS_MAX is where it runs. The predefine chain below is the
  * fallback for a hand build, and it cannot name either: a tier compiled
- * -m68060 reports itself as 060 whether it is the 68060 build or not.
+ * -m68060 reports itself as 060 whether it is the 060 build or not.
  */
 #if defined(PFS_ONLY)
 #define PFS_RANGE "[" PFS_STR(PFS_MIN) "]"

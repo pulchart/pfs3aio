@@ -1,6 +1,6 @@
 # Build pfs3aio with one gcc toolchain, one binary per target CPU in tiers.mk.
 #
-#   make -f makefile.gcc [OUTDIR=dir] [TIERS="68000 68060"] [AMIGA_PREFIX=/path]
+#   make -f makefile.gcc [OUTDIR=dir] [TIERS="000 060"] [AMIGA_PREFIX=/path]
 #
 # Driven by GNUmakefile, which runs it once per toolchain. ./makefile is
 # upstream's and builds a single -m68000 binary; this one is ours.

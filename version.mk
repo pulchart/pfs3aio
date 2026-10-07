@@ -32,7 +32,7 @@ $(shell mkdir -p $(OUTDIR); \
 #   PFS_TOP   open ended, the maximum is the highest CPU there is
 #   PFS_MAX   a closed range
 define TIER_TAG_RULE
-TIER_TAG_$(1) = -DPFS_TIER=$$(patsubst 68%,%,$(1)) -DPFS_MIN=$$(patsubst 68%,%,$$(TIER_MINCPU_$(1))) \
+TIER_TAG_$(1) = -DPFS_TIER=$(1) -DPFS_MIN=$$(patsubst 68%,%,$$(TIER_MINCPU_$(1))) \
 	$$(if $$(filter $$(TIER_MINCPU_$(1)),$$(TIER_MAXCPU_$(1))),-DPFS_ONLY=1,\
 		$$(if $$(filter 68060,$$(TIER_MAXCPU_$(1))),-DPFS_TOP=1,-DPFS_MAX=$$(patsubst 68%,%,$$(TIER_MAXCPU_$(1))))) \
 	$$(ORIGIN_TAG)

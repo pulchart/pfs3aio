@@ -10,7 +10,7 @@
 # the gh command that creates the draft.
 #
 # Arguments after "--" go to make, to build part of the set:
-#   sh publish.sh 20260920-1 -- TIERS="68080" INSTALL_TOOLCHAINS=gcc6
+#   sh publish.sh 20260920-1 -- TIERS="080" INSTALL_TOOLCHAINS=gcc6
 # Binaries left in dist/ from an earlier tag stay in the table and link to
 # that tag's release.
 #

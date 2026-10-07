@@ -26,7 +26,7 @@ set -u
 DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$DIR/../.." && pwd)
 TMP=$ROOT/tests/.tmp
-DRV=${1:-$ROOT/compare/gcc6/68020/pfs3aio}
+DRV=${1:-$ROOT/compare/gcc6/020/pfs3aio}
 CPU=${CPU:-68020}
 BS=${BS:-512}
 

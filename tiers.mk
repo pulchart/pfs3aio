@@ -10,65 +10,65 @@
 #
 # Why each flag and each gap: TOOLCHAINS.md, "Target CPU: 68060".
 
-TIERS = 68000 68020 68030 68040 68060 68080 68080la
+TIERS = 000 020 030 040 060 080 080a
 
-# gcc -m flag. Only 68080la takes the line-A group, which most cores alert
+# gcc -m flag. Only 080a takes the line-A group, which most cores alert
 # 8000000A on; -mtune=68080 gives the rest of what the core adds.
-TIER_CFLAGS_68000 = -m68000
-TIER_CFLAGS_68020 = -m68020-60
-TIER_CFLAGS_68030 = -m68030
-TIER_CFLAGS_68040 = -m68020-40
-TIER_CFLAGS_68060 = -m68060
-TIER_CFLAGS_68080 = -m68060 -mtune=68080 -Wa,-m68080
-TIER_CFLAGS_68080la = -m68080
+TIER_CFLAGS_000 = -m68000
+TIER_CFLAGS_020 = -m68020-60
+TIER_CFLAGS_030 = -m68030
+TIER_CFLAGS_040 = -m68020-40
+TIER_CFLAGS_060 = -m68060
+TIER_CFLAGS_080 = -m68060 -mtune=68080 -Wa,-m68080
+TIER_CFLAGS_080a = -m68080
 
 # vbcc -cpu= value: the nearest plain CPU, since vbcc takes no combined ones.
 # Every vbcc build is 68060 safe whatever this says.
-TIER_VBCPU_68000 = 68000
-TIER_VBCPU_68020 = 68020
-TIER_VBCPU_68030 = 68030
-TIER_VBCPU_68040 = 68040
-TIER_VBCPU_68060 = 68060
+TIER_VBCPU_000 = 68000
+TIER_VBCPU_020 = 68020
+TIER_VBCPU_030 = 68030
+TIER_VBCPU_040 = 68040
+TIER_VBCPU_060 = 68060
 
 # Toolchains that cannot build a given build, space separated.
 #   gcc6: its -m68020-60 is not 68060 safe, unlike 13.4 and later
-#   vbcc: generates the same code for 68020, 68030 and 68060
-#   68080: only gcc 6.5 has -m68080 and -mtune=68080; vbcc -cpu=68080 is its
+#   vbcc: generates the same code for 020, 030 and 060
+#   080:   only gcc 6.5 has -m68080 and -mtune=68080; vbcc -cpu=68080 is its
 #          68060 code
-TIER_SKIP_68020 = gcc6
-TIER_SKIP_68030 = vbcc
-TIER_SKIP_68040 = vbcc
-TIER_SKIP_68060 = vbcc
-TIER_SKIP_68080 = gcc13 gcc15 gcc16 vbcc
-TIER_SKIP_68080la = gcc13 gcc15 gcc16 vbcc
+TIER_SKIP_020 = gcc6
+TIER_SKIP_030 = vbcc
+TIER_SKIP_040 = vbcc
+TIER_SKIP_060 = vbcc
+TIER_SKIP_080 = gcc13 gcc15 gcc16 vbcc
+TIER_SKIP_080a = gcc13 gcc15 gcc16 vbcc
 
 # Lowest CPU the build runs on, so a harness knows which emulated CPU can run
 # it.
-TIER_MINCPU_68000 = 68000
-TIER_MINCPU_68020 = 68020
-TIER_MINCPU_68030 = 68020
-TIER_MINCPU_68040 = 68020
-TIER_MINCPU_68060 = 68020
-TIER_MINCPU_68080 = 68080
-TIER_MINCPU_68080la = 68080
+TIER_MINCPU_000 = 68000
+TIER_MINCPU_020 = 68020
+TIER_MINCPU_030 = 68020
+TIER_MINCPU_040 = 68020
+TIER_MINCPU_060 = 68020
+TIER_MINCPU_080 = 68080
+TIER_MINCPU_080a = 68080
 
 # Highest CPU the build runs on. Only those reaching 68060 are scanned by
 # tests/check68060.sh.
-TIER_MAXCPU_68000 = 68060
-TIER_MAXCPU_68020 = 68060
-TIER_MAXCPU_68030 = 68040
-TIER_MAXCPU_68040 = 68040
-TIER_MAXCPU_68060 = 68060
-TIER_MAXCPU_68080 = 68080
-TIER_MAXCPU_68080la = 68080
+TIER_MAXCPU_000 = 68060
+TIER_MAXCPU_020 = 68060
+TIER_MAXCPU_030 = 68040
+TIER_MAXCPU_040 = 68040
+TIER_MAXCPU_060 = 68060
+TIER_MAXCPU_080 = 68080
+TIER_MAXCPU_080a = 68080
 
 # Bracketed after the "runs on" column of the release table, where MINCPU and
 # MAXCPU alone cannot tell two builds for the same CPU apart. A note holds for
-# binaries stamped with TIER_NOTE_SINCE_<tier> or later; the 68080 build before
-# that tag was built the way 68080la is.
-TIER_NOTE_68080 = no Line-A
-TIER_NOTE_SINCE_68080 = 20260913-1
-TIER_NOTE_68080la = with Line-A
+# binaries stamped with TIER_NOTE_SINCE_<tier> or later; the 080 build before
+# that tag was built the way 080a is.
+TIER_NOTE_080 = no Line-A
+TIER_NOTE_SINCE_080 = 20260913-1
+TIER_NOTE_080a = with Line-A
 
 # Highest CPU Musashi implements, so the harnesses know which tiers they
 # cannot run at all.

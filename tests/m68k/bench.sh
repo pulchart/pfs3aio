@@ -71,7 +71,7 @@ build() {	# $1=toolchain $2=tier
 	vbcc)
 		# Linked with vlink rather than vc for the same reason makefile.vbcc
 		# does it: to force -Rstd. vbcc_fastcall.o supplies the @-prefixed
-		# divide helpers -fastcall calls, which only the 68000 tier needs.
+		# divide helpers -fastcall calls, which only the 000 tier needs.
 		export VBCC PATH="$VBCC/bin:$PATH"
 		extra=
 		if [ "$(tier_mincpu "$tier")" -lt 68020 ]; then
@@ -105,9 +105,9 @@ cycles() {	# $1=binary $2=cpu [$3=workload] -> kilocycles, or "fail"
 WORKLOADS="1:blockmove 2:divide 3:namecmp 4:listwalk 5:bitmap"
 
 # Reference result, from the toolchain the driver is released with.
-build gcc6 68000 || { echo "ERROR: reference build failed"; exit 2; }
+build gcc6 000 || { echo "ERROR: reference build failed"; exit 2; }
 EXPECT=$(CYCLES=1 python3 "$DIR"/vamos_cpu.py -q -C 68000 \
-	"$GEN"/bench-gcc6-68000 2>&1 >/dev/null | sed -n 's/^RC \(.*\)$/\1/p')
+	"$GEN"/bench-gcc6-000 2>&1 >/dev/null | sed -n 's/^RC \(.*\)$/\1/p')
 [ -n "$EXPECT" ] || { echo "ERROR: reference run produced no exit code"; exit 2; }
 
 echo "kilocycles charged by Musashi; expected exit code $EXPECT everywhere"

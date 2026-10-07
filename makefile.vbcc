@@ -78,15 +78,15 @@ CSRC = boot init assroutines messages volume lock dostohandlerinterface anodes \
 
 # startup must come first (its first instruction is the entry point) and end
 # last (it marks the end of the resident module).
-# vbcc_fastcall.s forwards the @-prefixed divide helpers, which only the 68000
+# vbcc_fastcall.s forwards the @-prefixed divide helpers, which only the 000
 # build needs; above it divu.l/divs.l are hardware instructions. Linking it
 # there anyway would drag _divu and _divs in from vc.lib for nothing, about 200
 # bytes.
-OBJ_ORDER_68000 = startup $(CSRC) vbcc_fastcall end
-OBJ_ORDER_68020 = startup $(CSRC) end
-OBJ_ORDER_68030 = startup $(CSRC) end
-OBJ_ORDER_68040 = startup $(CSRC) end
-OBJ_ORDER_68060 = startup $(CSRC) end
+OBJ_ORDER_000 = startup $(CSRC) vbcc_fastcall end
+OBJ_ORDER_020 = startup $(CSRC) end
+OBJ_ORDER_030 = startup $(CSRC) end
+OBJ_ORDER_040 = startup $(CSRC) end
+OBJ_ORDER_060 = startup $(CSRC) end
 
 .PHONY: all asm $(addprefix asm-,$(TIERS)) clean check help
 

@@ -5,7 +5,7 @@
 #   sh tests/check-linea.sh <dir-of-.s-files> [label]
 #
 # A core outside scores 10280 to 10904 alerts 8000000A on them. Only the
-# 68080la build is meant to have any.
+# 080a build is meant to have any.
 #
 # Not flagged: cmpiw.l, addiw.l and 64-bit mulu.l are 68080 only but outside
 # the group. Reads assembly, not objdump, for the reason in check68060.sh.
