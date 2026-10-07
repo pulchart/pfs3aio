@@ -98,7 +98,7 @@ help:
 	@echo "  sizes           Print the size table for whatever has been built"
 	@echo "  sibcall-proof   Show the RawRead miscompilation with/without the flag"
 	@echo "  install         Build every toolchain, install as pfs3aio.<tc> per build"
-	@echo "  dist            Same set into $(DIST_DIR)/, and the README table"
+	@echo "  dist            Same set into $(DIST_DIR)/, which git ignores"
 	@echo "  check-68060     Static audit: instructions the 68060 does not implement"
 	@echo "  check-linea     Static audit: 68080 instructions in the line-A space"
 	@echo "  verify          both audits plus format, write and read back under emulation"
@@ -221,12 +221,12 @@ sibcall-proof: | $(OUT)
 # ROM builder config names the toolchain it wants.
 INSTALL_TOOLCHAINS ?= $(TOOLCHAINS)
 
-# The published set, tracked in the tree and linked from README.md. Same layout
-# as install, one directory per target CPU.
+# The release set, one directory per target CPU like install. Git ignores it;
+# release-table.py turns it into the assets of a GitHub release.
 #
 # Publish from a tagged commit: the binaries name whatever PFS_REF resolves to,
 # so a set built off a tag says [jpu/<tag>] and one built anywhere else says
-# [jpu/<hash>]. dist-table.py then rewrites the README table from the files.
+# [jpu/<hash>].
 DIST_DIR ?= dist
 
 install: $(INSTALL_TOOLCHAINS)
@@ -252,7 +252,6 @@ dist: $(INSTALL_TOOLCHAINS)
 			printf "  %-8s %-6s -> %s (%s bytes)\n" "$$tc" "$$cpu" "$$dst" "$$(stat -c%s "$$dst")"; \
 		done; \
 	done
-	@python3 dist-table.py $(DIST_DIR) README.md
 
 clean:
 	rm -rf $(OUT)
