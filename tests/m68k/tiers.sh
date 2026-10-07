@@ -31,8 +31,8 @@ tier_builds() {	# $1=tier $2=toolchain
 }
 
 # CPU names are five-digit numbers, so a numeric comparison is also the right
-# ordering: 68000 < 68020 < 68030 < 68040 < 68060. Tier names are those plus an
-# optional suffix, 68080la, which is why only MINCPU is compared here.
+# ordering: 68000 < 68020 < 68030 < 68040 < 68060. Tier names are three digits
+# and an optional letter, 080a, which is why only MINCPU is compared here.
 tier_runs_on() {	# $1=tier $2=emulated cpu
 	[ "$(tier_mincpu "$1")" -le "$2" ]
 }

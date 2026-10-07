@@ -163,20 +163,20 @@ check-68060: $(addprefix asm-,$(TOOLCHAINS))
 	done; \
 	[ $$rc -eq 0 ] && echo "== 68060: all builds clean ==" || { echo "== 68060: UNSAFE builds above =="; exit 1; }
 
-# The 68080 cannot be emulated either. Only 68080la is meant to have line-A.
+# The 68080 cannot be emulated either. Only 080a is meant to have line-A.
 check-linea: $(addprefix asm-,$(TOOLCHAINS))
 	@rc=0; for tc in $(TOOLCHAINS); do \
 		for cpu in $(TIERS); do \
 			d=$(OUT)/$$tc/asm/$$cpu; \
 			[ -d "$$d" ] || continue; \
-			if [ "$$cpu" = 68080la ]; then \
+			if [ "$$cpu" = 080a ]; then \
 				sh tests/check-linea.sh "$$d" "$$tc/$$cpu" || true; \
 			else \
 				sh tests/check-linea.sh "$$d" "$$tc/$$cpu" || rc=1; \
 			fi; \
 		done; \
 	done; \
-	[ $$rc -eq 0 ] && echo "== line-A: only the 68080la build has any ==" || { echo "== line-A: builds above carry it and must not =="; exit 1; }
+	[ $$rc -eq 0 ] && echo "== line-A: only the 080a build has any ==" || { echo "== line-A: builds above carry it and must not =="; exit 1; }
 
 # Functional check of every build under emulation, plus the static audits that
 # emulation cannot do. Needs amifuse and rdbtool.
@@ -210,7 +210,7 @@ sibcall-proof: | $(OUT)
 		OUTDIR=/out/proof-off EXTRA_CFLAGS="-fno-optimize-sibling-calls" >/dev/null
 	@for m in on off; do \
 		echo ""; echo "=== gcc 13.4, sibling calls $$m ==="; \
-		$(RUN) $(GCC_IMAGE):$(GCC13_TAG) m68k-amigaos-objdump -d /out/proof-$$m/obj/68000/disk.o \
+		$(RUN) $(GCC_IMAGE):$(GCC13_TAG) m68k-amigaos-objdump -d /out/proof-$$m/obj/000/disk.o \
 		| awk '/_RawRead:/{p=1} p{print; if(++n>12) exit}'; \
 	done
 	@echo ""

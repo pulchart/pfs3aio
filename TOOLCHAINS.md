@@ -24,11 +24,11 @@ make install INSTALL_DIR=/tmp/x       # dry run somewhere harmless
 Resulting layout, one directory per target CPU:
 
 ```
-/opt/AmigaOS/pfs/v20.0/68000/pfs3aio.gcc6     66144
-/opt/AmigaOS/pfs/v20.0/68000/pfs3aio.gcc13    65848
-/opt/AmigaOS/pfs/v20.0/68000/pfs3aio.gcc15    66468
-/opt/AmigaOS/pfs/v20.0/68000/pfs3aio.gcc16    66816
-/opt/AmigaOS/pfs/v20.0/68000/pfs3aio.vbcc     85572
+/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc6     66144
+/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc13    65848
+/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc15    66468
+/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc16    66816
+/opt/AmigaOS/pfs/v20.0/000/pfs3aio.vbcc     85572
 ```
 
 ## The toolchains
@@ -49,13 +49,13 @@ They all install into `/opt/amiga`, which the auto-detection in `makefile` finds
 
 **gcc 15 and 16 need `-std=gnu17`.** Both default to C23, where `struct.h:306`'s `typedef enum {false, true} bool;` is a syntax error. gcc 6.5 does not know the option at all. gcc 13.4 accepts it but does not need it, and leaving it off keeps its output byte-identical to what the previously used locally built image produced.
 
-**gcc 6.5 is pinned to a dated tag**, not the floating `gcc-v6.5.0b`, because that tag now carries a build that miscompiles `intlcmp`. See "Issue 3" below. `gcc-v6.5.0b-20251218` carries bebbo build `251015095727` and produces binaries byte-identical to a host `~/opt/m68k-amigaos` install of the same build, so the pin changed nothing that ships. `gcc-v6.5.0b-20260629`, build `260602123145`, is also clean but 88 bytes smaller on the 68000 tier and 84 on the 68020, so it is not a drop-in replacement for the pinned one.
+**gcc 6.5 is pinned to a dated tag**, not the floating `gcc-v6.5.0b`, because that tag now carries a build that miscompiles `intlcmp`. See "Issue 3" below. `gcc-v6.5.0b-20251218` carries bebbo build `251015095727` and produces binaries byte-identical to a host `~/opt/m68k-amigaos` install of the same build, so the pin changed nothing that ships. `gcc-v6.5.0b-20260629`, build `260602123145`, is also clean but 88 bytes smaller on the 000 tier and 84 on the 020, so it is not a drop-in replacement for the pinned one.
 
 ## Results
 
 One build per target CPU, each named after the machine you would install it on; `tiers.mk` holds the table and `BENCHMARK.md` compares them. Sizes in bytes, stock flags, no `COMMON_EXTRA`:
 
-| toolchain | 68000 | 68020 | 68030 | 68040 | 68060 |
+| toolchain | 000 | 020 | 030 | 040 | 060 |
 |---|---|---|---|---|---|
 | gcc 6.5.0b | 66144 | - | 64772 | 65184 | 64812 |
 | gcc 13.4.0b | 65848 | 63872 | 63816 | 64020 | 63872 |
@@ -63,7 +63,7 @@ One build per target CPU, each named after the machine you would install it on; 
 | gcc 16.1.1b | 66816 | 64524 | 64812 | 64864 | 64524 |
 | vbcc | 85572 | 79628 | - | - | - |
 
-Two gaps, both recorded as `TIER_SKIP` in `tiers.mk`. gcc 6.5 has no `68020` build: its `-m68020-60` is not 68060-safe, see "Target CPU: 68060". vbcc builds only `68000` and `68020`: it generates the same code for `-cpu=68020`, `68030` and `68060`, so the other two would be duplicate binaries, and it is a comparison toolchain rather than one that ships.
+Two gaps, both recorded as `TIER_SKIP` in `tiers.mk`. gcc 6.5 has no `020` build: its `-m68020-60` is not 68060-safe, see "Target CPU: 68060". vbcc builds only `000` and `020`: it generates the same code for `-cpu=68020`, `68030` and `68060`, so the other two would be duplicate binaries, and it is a comparison toolchain rather than one that ships.
 
 All of them build the tree clean. Under `-Wall`, gcc 6.5 reports 292 warnings and gcc 15.2 reports 276; gcc 15 adds `-Warray-bounds` at `boot.c:240` and `fsresource.c:78`, which are false positives from the Amiga `*(struct ExecBase **)4` absolute-address idiom.
 
@@ -73,18 +73,18 @@ Upstream's position in PR #10 was that 6.5.0b stays the compiler for pfs3aio bec
 
 | | .text | insns | `cmpa #0,aN` | libgcc calls |
 |---|---|---|---|---|
-| gcc 6.5 / 68000 | 60804 | 19275 | 4 | 74 |
-| gcc 13.4 / 68000 | 60500 | 18723 | 180 | 74 |
-| gcc 15.2 / 68000 | 61124 | 18835 | 189 | 74 |
-| gcc 6.5 / 68060 | 60032 | 18319 | 0 | 0 |
-| gcc 13.4 / 68060 | 59032 | 18142 | 0 | 0 |
-| gcc 15.2 / 68060 | 59472 | 18203 | 0 | 0 |
+| gcc 6.5 / 000 | 60804 | 19275 | 4 | 74 |
+| gcc 13.4 / 000 | 60500 | 18723 | 180 | 74 |
+| gcc 15.2 / 000 | 61124 | 18835 | 189 | 74 |
+| gcc 6.5 / 060 | 60032 | 18319 | 0 | 0 |
+| gcc 13.4 / 060 | 59032 | 18142 | 0 | 0 |
+| gcc 15.2 / 060 | 59472 | 18203 | 0 | 0 |
 
 **The `cmp #0,an` complaint is real and large.** `tst.l aN` is 68020+, so a pointer NULL test has to be synthesized on 68000. gcc 6.5 uses `move.l aN,dN` (`2008`, one word, register to register). gcc 13.4 and 15.2 use `cmpa.w #0,aN` (`b0fc 0000`, two words, with an immediate operand fetch). That is 4 occurrences against 180 and 189, roughly 360 extra bytes and an extra memory fetch on every pointer check in a driver that checks pointers constantly. On 68020 the difference vanishes: all three emit `tst.l aN`, which is why the 68020 column shows zero.
 
 **The size claim does not hold for 13.4.** Despite that regression, gcc 13.4 produces less text than 6.5 in both builds, so it is winning elsewhere by more than the NULL tests cost. gcc 15.2 is bigger than 6.5 on 68000+. The absolute-addressing half of the claim was not re-verified after the objdump problem was found.
 
-**No algorithmic difference in arithmetic.** They emit the same 74 libgcc helper calls on the `68000` build, where 32-bit multiply and divide have no hardware instruction, and none where `muls.l`/`divs.l` exist in hardware. No compiler is picking a better or worse algorithm here.
+**No algorithmic difference in arithmetic.** They emit the same 74 libgcc helper calls on the `000` build, where 32-bit multiply and divide have no hardware instruction, and none where `muls.l`/`divs.l` exist in hardware. No compiler is picking a better or worse algorithm here.
 
 This is static instruction-mix analysis. For measured cost see "Measuring cost under emulation" below; nothing was timed on hardware.
 
@@ -120,9 +120,9 @@ Two harnesses, both counting the cycles Musashi charges for the instructions it 
 
 **The results live in `BENCHMARK.md`**, which carries the driver tables per toolchain and build, the builds compared against each other, and the block-size comparison. What follows here is what the measurements say about the compilers rather than about the filesystem.
 
-### What the 68060 build is worth
+### What the 060 build is worth
 
-On a 68020, against the same source built `68000`. Positive means the `68060` build is cheaper.
+On a 68020, against the same source built `000`. Positive means the `060` build is cheaper.
 
 | | fmt | wr | rd | ls | create |
 |---|---|---|---|---|---|
@@ -137,15 +137,15 @@ On a 68020, against the same source built `68000`. Positive means the `68060` bu
 | gcc 16.1, 4K | +7% | +13% | +13% | +20% | +9% |
 | vbcc, 4K | +4% | +9% | +15% | +4% | +7% |
 
-The payoff sits in the write and the directory listing, where hardware `muls.l`/`divs.l` replace libgcc helpers; format and file creation gain less, and on reads the `68000` build is sometimes faster. The CPU is worth more than the flag: the same `68000` binary moved from a 68000 to a 68020 divides the write by 1.71x to 2.11x, against 1.22x at best for choosing the `68060` build.
+The payoff sits in the write and the directory listing, where hardware `muls.l`/`divs.l` replace libgcc helpers; format and file creation gain less, and on reads the `000` build is sometimes faster. The CPU is worth more than the flag: the same `000` binary moved from a 68000 to a 68020 divides the write by 1.71x to 2.11x, against 1.22x at best for choosing the `060` build.
 
-The negative read column is most likely an artifact. The `68060` build is compiled `-m68060` while Musashi charges every build at 68020 prices, so its `divu.l` is billed 84 cycles against a magic-multiply sequence on the `68000` side. On real 68060 hardware that instruction is the fast one, so these figures are a lower bound.
+The negative read column is most likely an artifact. The `060` build is compiled `-m68060` while Musashi charges every build at 68020 prices, so its `divu.l` is billed 84 cycles against a magic-multiply sequence on the `000` side. On real 68060 hardware that instruction is the fast one, so these figures are a lower bound.
 
 ### What the synthetic workload shows about codegen
 
 `bench.sh` ranks gcc 15.2 far worse than gcc 13.4 on a 68000, 237M against 154M cycles, where the driver has 15.2 slightly ahead. The whole gap is one loop and one transformation. For `if (w & (1UL << b)) sum++` gcc 6.5 emits `btst d5,d6` and a branch, 6 cycles; gcc 15.2 and 16.1 go branchless with `lsr.l d0,d3` / `and.l #1,d3`. A register-count `lsr.l` costs 8+2n cycles on a 68000, around 39 at n averaged over 0-31, and a flat 6 on a 68020, which is why the same loop is 2.4x worse on a 68000 and only 31% worse on a 68020.
 
-It does not reach the driver. Register-count shifts over the whole tree, `68000` build:
+It does not reach the driver. Register-count shifts over the whole tree, `000` build:
 
 | build | register-count shifts | all shifts |
 |---|---|---|
@@ -201,15 +201,15 @@ $VER: Professional-File-System-III 20.0 [gcc16.1/030][020-040][jpu/e4bb995] PFS3
 
 | build | flag | runs on | tag |
 |---|---|---|---|
-| `68000` | `-m68000` | 68000 to 68060 | `[<cc>/000][000+]` |
-| `68020` | `-m68020-60` | 68020 to 68060 | `[<cc>/020][020+]` |
-| `68030` | `-m68030` | 68020 to 68040 | `[<cc>/030][020-040]` |
-| `68040` | `-m68020-40` | 68020 to 68040 | `[<cc>/040][020-040]` |
-| `68060` | `-m68060` | 68020 to 68060 | `[<cc>/060][020+]` |
-| `68080` | `-m68060 -mtune=68080 -Wa,-m68080` | 68080 only | `[<cc>/080][080]` |
-| `68080la` | `-m68080` | 68080 only, line-A | `[<cc>/080la][080]` |
+| `000` | `-m68000` | 68000 to 68060 | `[<cc>/000][000+]` |
+| `020` | `-m68020-60` | 68020 to 68060 | `[<cc>/020][020+]` |
+| `030` | `-m68030` | 68020 to 68040 | `[<cc>/030][020-040]` |
+| `040` | `-m68020-40` | 68020 to 68040 | `[<cc>/040][020-040]` |
+| `060` | `-m68060` | 68020 to 68060 | `[<cc>/060][020+]` |
+| `080` | `-m68060 -mtune=68080 -Wa,-m68080` | 68080 only | `[<cc>/080][080]` |
+| `080a` | `-m68080` | 68080 only, line-A | `[<cc>/080a][080]` |
 
-`<cc>` is `gcc6.5`, `gcc13.4`, `gcc15.2`, `gcc16.1` or `vbcc`. The first field is what the build is tuned for, the second where it runs. The range alone would not identify a binary: `68030` and `68040` share `020-040`, `68020` and `68060` share `020+`, `68080` and `68080la` share `080`.
+`<cc>` is `gcc6.5`, `gcc13.4`, `gcc15.2`, `gcc16.1` or `vbcc`. The first field is what the build is tuned for, the second where it runs. The range alone would not identify a binary: `030` and `040` share `020-040`, `020` and `060` share `020+`, `080` and `080a` share `080`.
 
 The last bracket is the origin, `[<fork>/<tag or commit>]`, the tag when the build came from a tagged commit. A build made with upstream's `makefile` carries no origin bracket, since it passes none of these defines.
 
@@ -243,30 +243,30 @@ Counted from compiler assembly output over the whole tree, at upstream `211f7f0`
 
 The 64-bit multiplies come from GCC's divide-by-constant optimization, a multiply-high against a magic constant such as `mulu.l #3435973837,d2:d1`. `-m68020` emits them, `-m68060` does not. `-mnobitfield` removes the bitfield instructions in both compilers.
 
-Hardware results, `bare` ROM profile on 68060. The `68020`, `68030` and `68040` builds are newer than this table; `68030` and `68040` cannot run here by construction:
+Hardware results, `bare` ROM profile on 68060. The `020`, `030` and `040` builds are newer than this table; `030` and `040` cannot run here by construction:
 
 | build | result |
 |---|---|
-| gcc 6.5 / 68000 (`-m68000`) | **works** |
-| gcc 6.5 / 68060 (`-m68060`) | **works** |
-| gcc 13.4 / 68000 (`-m68000`) | **works** |
-| gcc 13.4 / 68060 (`-m68060`) | **works** |
-| gcc 15.2 / 68000 (`-m68000`) | **works** |
-| gcc 15.2 / 68060 (`-m68060`) | **works** |
-| gcc 16.1 / 68000 (`-m68000`) | **works** |
-| gcc 16.1 / 68060 (`-m68060`) | **works** |
-| vbcc / 68000 (`-cpu=68000`) | **works** |
-| vbcc / 68060 (`-cpu=68020` then) | **works** |
+| gcc 6.5 / 000 (`-m68000`) | **works** |
+| gcc 6.5 / 060 (`-m68060`) | **works** |
+| gcc 13.4 / 000 (`-m68000`) | **works** |
+| gcc 13.4 / 060 (`-m68060`) | **works** |
+| gcc 15.2 / 000 (`-m68000`) | **works** |
+| gcc 15.2 / 060 (`-m68060`) | **works** |
+| gcc 16.1 / 000 (`-m68000`) | **works** |
+| gcc 16.1 / 060 (`-m68060`) | **works** |
+| vbcc / 000 (`-cpu=68000`) | **works** |
+| vbcc / 060 (`-cpu=68020` then) | **works** |
 | any / `-m68020` | fails |
 
 vbcc needed no workaround: it emits none of the affected instructions at any `-cpu` setting. The strict-aliasing issue below produced no symptom here and remains latent.
 
-**The `68060` build is compiled `-m68060`.** That drops the 64-bit multiplies and keeps the rest 68020 compatible, so the binary still runs on 68020 and 68030. Both builds verify clean:
+**The `060` build is compiled `-m68060`.** That drops the 64-bit multiplies and keeps the rest 68020 compatible, so the binary still runs on 68020 and 68030. Both builds verify clean:
 
 | build | flags | 64-bit mul/div | `MOVEP` | `CHK2`/`CMP2` | `CAS2` | FPU |
 |---|---|---|---|---|---|---|
-| `68000` | `-m68000` | 0 | 0 | 0 | 0 | 0 |
-| `68060` | `-m68060` | 0 | 0 | 0 | 0 | 0 |
+| `000` | `-m68000` | 0 | 0 | 0 | 0 | 0 |
+| `060` | `-m68060` | 0 | 0 | 0 | 0 | 0 |
 
 `-m68020-60` is 68060-safe from gcc 13.4 on; gcc 6.5 still emits the 64-bit multiplies under it. `-m68060` selects the FPU libgcc, `libm020/libm881`, from which the driver pulls nothing, having no floating point.
 
@@ -274,7 +274,7 @@ Every toolchain boots here once the build avoids `-m68020`, so the choice of com
 
 ## Apollo 68080
 
-The AC68080 runs everything from the 68000 to the 68060 except the MMU instructions, so the `68060` build works on it. Two builds use what the core adds, `68080` and `68080la`, and only gcc 6.5 can produce either: 13.4, 15.2 and 16.1 reject `-m68080`, `-mcpu=68080` and `-march=68080` alike, and vbcc's `-cpu=68080` emits its 68060 code with a different `machine` directive.
+The AC68080 runs everything from the 68000 to the 68060 except the MMU instructions, so the `060` build works on it. Two builds use what the core adds, `080` and `080a`, and only gcc 6.5 can produce either: 13.4, 15.2 and 16.1 reject `-m68080`, `-mcpu=68080` and `-march=68080` alike, and vbcc's `-cpu=68080` emits its 68060 code with a different `machine` directive.
 
 vbcc's switch is not a target. Its code generator has no 68080 model: `-cpu=68080` gives byte-identical output to `-cpu=68020` and `-cpu=68060`, only `-cpu=68040` differs, and any number is accepted, `-cpu=99999` included. The value is forwarded into the `machine` directive for vasm, which does know the 68080, but what it implements there is AMMX, `load`, `store`, `vperm` and the E registers. The integer extensions gcc emits are rejected under `-m68080`: `clr.q`, `mov3q.l`, `mvs`, `mvz`, `moviw.l` and `dbral` all fail to assemble.
 
@@ -304,18 +304,18 @@ gcc 6.5 has no switch that drops the group, but `-mtune=68080` emits what the co
 
 | build | flags | carries |
 |---|---|---|
-| `68080` | `-m68060 -mtune=68080 -Wa,-m68080` | `cmpiw.l`, `addiw.l`, `dbral`, 64-bit `mulu.l` |
-| `68080la` | `-m68080` | those plus the line-A group |
+| `080` | `-m68060 -mtune=68080 -Wa,-m68080` | `cmpiw.l`, `addiw.l`, `dbral`, 64-bit `mulu.l` |
+| `080a` | `-m68080` | those plus the line-A group |
 
 `-Wa,-m68080` is needed because the assembler refuses `cmpiw.l` under `-m68060`. Both builds are 68080 only: `cmpiw.l` and the 64-bit multiply fault on a 68060.
 
-`make check-linea` scans the generated assembly of every build and expects a count only from `68080la`.
+`make check-linea` scans the generated assembly of every build and expects a count only from `080a`.
 
 No AMMX: not one E-register or SIMD instruction. `-m68080` uses the integer extensions only, so AMMX needs intrinsics or assembly.
 
 `-m68080` selects the base multilib, so libgcc and libnix come from the plain 68000 build. The driver calls almost nothing from them, since the 68080 has the division and multiplication in hardware.
 
-`68080la` is the smallest gcc 6.5 produces, 63748 bytes, from the shorter immediate forms; `68080` is 64504 and the `68060` build 64816.
+`080a` is the smallest gcc 6.5 produces, 63748 bytes, from the shorter immediate forms; `080` is 64504 and the `060` build 64816.
 
 ### Counting instructions: use the compiler, not objdump
 
@@ -340,8 +340,8 @@ vbcc passes arguments on the stack by default, five pushes and an `add.w #20,a7`
 
 | build | binary, default | binary, `-fastcall` | stack/movem ops* |
 |---|---|---|---|
-| `68000` | 89696 | **85264** | 1286 -> **395** |
-| `68060` | 83764 | **79316** | 1235 -> **344** |
+| `000` | 89696 | **85264** | 1286 -> **395** |
+| `060` | 83764 | **79316** | 1235 -> **344** |
 
 \* in `disk.c`, `lru.c`, `update.c`, `allocation.c`, `anodes.c`
 
@@ -360,7 +360,7 @@ About 4.4 KB smaller and 70 percent less stack traffic per build. On the hot pat
 
 The remaining gap is post-increment addressing and `dbf`, which C cannot reach. 292 bytes of code for the whole change. `tests/live/memmove_live.c` compares it against the host `memmove` over every small length at every overlap offset in both directions plus 20000 random cases, 23321 comparisons; the copies use `ULONG`/`UWORD` and `size_t` for the alignment casts, so the widths are right on host and target.
 
-**The 32-bit divide helpers are forwarded in `vbcc_fastcall.s`.** vbcc emits `jsr @_divu` for division and `jsr __divu` for modulo from the same object, and only the plain name exists in `vc.lib`. The convention is identical either way, dividend in `d0`, divisor in `d1`, quotient back in `d0` and remainder in `d1`, so the `@` names are a `jmp` and no division is reimplemented. Only the `68000` build links it: on 68020+ `divu.l`/`divs.l` are hardware instructions, and linking the thunk there drags `_divu`/`_divs` in from `vc.lib` for about 200 bytes.
+**The 32-bit divide helpers are forwarded in `vbcc_fastcall.s`.** vbcc emits `jsr @_divu` for division and `jsr __divu` for modulo from the same object, and only the plain name exists in `vc.lib`. The convention is identical either way, dividend in `d0`, divisor in `d1`, quotient back in `d0` and remainder in `d1`, so the `@` names are a `jmp` and no division is reimplemented. Only the `000` build links it: on 68020+ `divu.l`/`divs.l` are hardware instructions, and linking the thunk there drags `_divu`/`_divs` in from `vc.lib` for about 200 bytes.
 
 **`startup.s` calls `EntryPoint` and `ResidentAddToFSResource` by name.** Hand-written assembly cannot follow the `@` prefix, so both are marked `ASMLINKAGE`, which is `__stdargs` under vbcc and empty everywhere else.
 
@@ -383,9 +383,9 @@ assemble vasmm68k_std -Fhunk
 
 `VBCC_OPT` defaults to `-O1` and can be overridden on either makefile. Note vbcc's `-O` numbering: no flag at all is `-O=1`, which is almost no optimisation; `-O1` is `-O=991`, `-O2` is `-O=1023 -schedule`, `-O3` is everything plus cross-module. Peephole optimisation is on by default (`-no-peephole` disables it).
 
-Measured on the `68000` build, every variant free of the instructions the 68060 lacks:
+Measured on the `000` build, every variant free of the instructions the 68060 lacks:
 
-| VBCC_OPT | 68000 | vs `-O1` |
+| VBCC_OPT | 000 | vs `-O1` |
 |---|---|---|
 | `-O1 -size` | 87692 | -268 |
 | `-O1` (default) | 87944 | 0 |
@@ -421,7 +421,7 @@ Plus two new files: `vbcc_compat.h`/`vbcc_compat.c` supply `stricmp` (used once 
 
 Linked with `vlink` directly rather than through `vc`. `vc`'s `aos68k` config appends `-s -Rshort`, and the short relocation table it produces (`HUNK_DREL32`, 0x3F7) is not understood by Capitoline, the ROM builder behind amigaos-kickstart-builder. It misparses the file and dies with `free(): corrupted unsorted chunks` partway through the build, after the ADFs have loaded.
 
-`-Rstd` emits the ordinary `HUNK_RELOC32` that gcc's linker also produces, and the ROM then builds normally. It costs about 340 bytes on the 68020 tier and 1700 on 68000.
+`-Rstd` emits the ordinary `HUNK_RELOC32` that gcc's linker also produces, and the ROM then builds normally. It costs about 340 bytes on the 020 tier and 1700 on 000.
 
 | | hunks |
 |---|---|
@@ -471,7 +471,7 @@ Fixtures are not in the repo. Create one with `rdbtool` and format it with the d
 rdbtool -f tests/fixtures/small.hdf create size=64Mi + init + add name=DH0 \
         size=95% dostype=0x50465303
 FI_CMD=none python3 tests/fi.py format tests/fixtures/small.hdf DH0 TESTVOL \
-        --driver compare/gcc6/68000/pfs3aio
+        --driver compare/gcc6/000/pfs3aio
 ```
 
 ## Issue 1: sibling-call miscompilation (handled)
@@ -536,15 +536,15 @@ _intlcmp:
 
 The `i` pass, "use post increment on addresses", rewrote `cmp.b (a1),d1` into `cmp.b (a1)+,d1` and did not delete the `addq.l #1,a1` that had followed it. It got `a0` right. `a1` therefore runs one byte ahead for the whole comparison loop. A clean build of the same source emits no `addq.l #1,a1` at all.
 
-`intlcmp` is the case-insensitive name comparison behind directory lookup, so the symptom is narrow and misleading: the 68060 build formats and writes correctly, and `amifuse ls` lists the directory, but no file can be opened by name. The data on disk is fine, which is provable by reading it back with a good build.
+`intlcmp` is the case-insensitive name comparison behind directory lookup, so the symptom is narrow and misleading: the 060 build formats and writes correctly, and `amifuse ls` lists the directory, but no file can be opened by name. The data on disk is fine, which is provable by reading it back with a good build.
 
 Localisation, in order:
 
 - `-fbbb=-` fixes it, `-O1` and `-O0` fix it, `-m68020` does not: it is not 68060 scheduling.
 - Leave-one-out over the fifteen passes in `-fbbb=+` (`abcefhilmnprsz0`): only removing `i` fixes it.
 - Per-object bisect over the C files, all built with `-fbbb=+` except one: only `assroutines.c` fixes it.
-- The `68000` build is untouched. With `-m68000` the `i` pass produces byte-identical assembly for `assroutines.c` either way.
+- The `000` build is untouched. With `-m68000` the `i` pass produces byte-identical assembly for `assroutines.c` either way.
 
-If a floating tag has to be used, `-fbbb=abcefhlmnprsz0` is the whole-tree workaround. It passes every build and costs 112 bytes on the `68000` one and 96 on the others.
+If a floating tag has to be used, `-fbbb=abcefhlmnprsz0` is the whole-tree workaround. It passes every build and costs 112 bytes on the `000` one and 96 on the others.
 
 Worth reporting to AmigaPorts/m68k-amigaos-gcc.

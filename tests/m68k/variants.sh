@@ -14,7 +14,7 @@
 # a pass here as 68060 clearance.
 #
 # Each build runs on the lowest CPU its tier declares in tiers.mk, so the cpu
-# column says which core the row was tested on. The 68040 tier is deliberately
+# column says which core the row was tested on. The 040 tier is deliberately
 # not a 68060 target and check-68060 skips it, which makes this its only
 # automated evidence.
 
