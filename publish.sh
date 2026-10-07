@@ -1,7 +1,7 @@
 #!/bin/sh
 # Publishes a set of binaries: build, stage the GitHub release, tag, push.
 #
-#   sh publish.sh [YYYYMMDD-N] [-n] [-b branch] [--push] [-- make-args]
+#   sh publish.sh [YYYYMMDD-N] [-n] [-b branch] [--push]
 #
 # The tag defaults to today with sequence 1. It is passed into the build as
 # PFS_REF before it exists, so every binary names the tag that is then created
@@ -9,10 +9,8 @@
 # release-table.py stages them as release assets in release/<tag>/ and prints
 # the gh command that creates the draft.
 #
-# Arguments after "--" go to make, to build part of the set:
-#   sh publish.sh 20260920-1 -- TIERS="080" INSTALL_TOOLCHAINS=gcc6
-# Binaries left in dist/ from an earlier tag are uploaded with the new release
-# under that tag's name, so every release holds a complete set.
+# Everything is rebuilt for every tag, changed or not, so every binary carries
+# the tag and every release holds a complete new set.
 #
 # -n prints what would run. --push pushes the branch and the tag; the draft
 # is never created here.
@@ -31,8 +29,7 @@ while [ $# -gt 0 ]; do
 	-n) DRY=1 ;;
 	--push) PUSH=1 ;;
 	-b) [ $# -ge 2 ] || die "-b needs a branch"; shift; BRANCH=$1 ;;
-	--) shift; break ;;
-	-*) echo "usage: sh publish.sh [YYYYMMDD-N] [-n] [-b branch] [--push] [-- make-args]"; exit 2 ;;
+	-*) echo "usage: sh publish.sh [YYYYMMDD-N] [-n] [-b branch] [--push]"; exit 2 ;;
 	*) TAG=$1 ;;
 	esac
 	shift
@@ -53,7 +50,7 @@ git rev-parse -q --verify "refs/tags/$TAG" >/dev/null && \
 
 echo "== publishing $TAG from $(git rev-parse --short HEAD) on $BRANCH"
 
-run make dist PFS_REF="$TAG" "$@"
+run make dist PFS_REF="$TAG"
 
 # Stages the binaries stamped with the tag and refuses a stamp that is neither
 # the tag nor an existing one. Runs before the tag exists so a refusal leaves
