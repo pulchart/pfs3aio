@@ -30,7 +30,7 @@ STAMP_RE = re.compile(r"[A-Za-z0-9._-]+$")
 # Column order; a toolchain not listed goes last, alphabetically.
 ORDER = ["gcc13", "gcc6", "gcc15", "gcc16", "vbcc"]
 
-INTRO = "Green builds are the ones I use. Grey ones are for comparing compilers and CPUs. Unofficial and untested, use at your own risk."
+INTRO = "Green builds are the ones I use. Grey ones are compiled but not used by me."
 
 
 def die(msg):
