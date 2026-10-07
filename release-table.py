@@ -30,12 +30,7 @@ STAMP_RE = re.compile(r"[A-Za-z0-9._-]+$")
 # Column order; a toolchain not listed goes last, alphabetically.
 ORDER = ["gcc13", "gcc6", "gcc15", "gcc16", "vbcc"]
 
-INTRO = (
-    "Every binary names its build in the `$VER` string, readable with `Version <file> FULL`. "
-    "These are not official builds and are untested, use them at your own risk. "
-    "Reports go to [issues](https://github.com/%s/issues). "
-    "Green builds are the ones the author runs, grey ones are for comparing compilers and CPUs." % REPO
-)
+INTRO = "Green: builds the author runs. Grey: for comparing compilers and CPUs. Not official builds, untested, use at your own risk."
 
 
 def die(msg):
