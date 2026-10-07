@@ -4,12 +4,12 @@
 #
 #   python3 release-table.py <tag> [--dist DIR] [--out DIR]
 #
-# Every binary in DIST that carries [<fork>/<tag>] in its own $VER string is
-# copied to OUT/<tag>/ as pfs3aio-<stamp>-<tier>-<toolchain>. The table in the
-# body lists every binary in DIST and links each one to the release its stamp
-# names, so builds carried over from an earlier tag point at that release and
-# are not uploaded twice. Columns come from the binaries and from tiers.mk,
-# never from a second copy of the naming rules.
+# Every binary in DIST is copied to OUT/<tag>/ as
+# pfs3aio-<stamp>-<tier>-<toolchain>, where <stamp> is the tag in the binary's
+# own $VER string, so a build carried over from an earlier tag keeps that tag's
+# name. The release is complete in itself and its table links to its own
+# assets. At least one binary must carry <tag>. Columns come from the binaries
+# and from tiers.mk, never from a second copy of the naming rules.
 #
 # Nothing is created on GitHub: the gh command is printed, not run.
 
@@ -51,7 +51,14 @@ def runs_on(tier, stamp):
     lo, hi = tier_field("MINCPU", tier), tier_field("MAXCPU", tier)
     if not lo or not hi:
         die("tier %s is not in %s" % (tier, TIERS_MK))
-    out = "%s only" % lo if lo == hi else "%s to %s" % (lo, hi)
+    # A top of 68060 means open ended, as -DPFS_TOP does in version.mk: the
+    # 68080 runs those builds too.
+    if lo == hi:
+        out = "%s only" % lo
+    elif hi == "68060":
+        out = "%s+" % lo
+    else:
+        out = "%s to %s" % (lo, hi)
     # TIER_NOTE_<tier> separates two builds naming the same CPU. It holds for
     # binaries stamped TIER_NOTE_SINCE_<tier> or later; stamps are dates, so
     # they compare as strings.
@@ -116,18 +123,18 @@ def rows(dist):
     return out
 
 
-def url(r):
-    return "https://github.com/%s/releases/download/%s/%s" % (REPO, r["stamp"], r["asset"])
+def url(tag, r):
+    return "https://github.com/%s/releases/download/%s/%s" % (REPO, tag, r["asset"])
 
 
-def badge(r):
+def badge(tag, r):
     img = ("https://img.shields.io/github/downloads/%s/%s/%s"
            "?displayAssetName=false&label=%s&color=blue"
-           % (REPO, r["stamp"], r["asset"], r["cc"]))
-    return "[![%s](%s)](%s)" % (r["cc"], img, url(r))
+           % (REPO, tag, r["asset"], r["cc"]))
+    return "[![%s](%s)](%s)" % (r["cc"], img, url(tag, r))
 
 
-def render(rs):
+def render(tag, rs):
     tcs = sorted({r["tc"] for r in rs},
                  key=lambda t: (ORDER.index(t) if t in ORDER else len(ORDER), t))
     label = {r["tc"]: r["cc"] for r in rs}
@@ -137,7 +144,7 @@ def render(rs):
     lines = ["| build | runs on | " + " | ".join(label[t] for t in tcs) + " |",
              "|---|---|" + "---|" * len(tcs)]
     for tier in tiers:
-        cells = [badge(cell[(tier, t)]) if (tier, t) in cell else "-" for t in tcs]
+        cells = [badge(tag, cell[(tier, t)]) if (tier, t) in cell else "-" for t in tcs]
         newest = max(r["stamp"] for r in rs if r["tier"] == tier)
         lines.append("| `%s` | %s | %s |" % (tier, runs_on(tier, newest), " | ".join(cells)))
     return "\n".join(lines)
@@ -163,9 +170,9 @@ def main():
         if r["stamp"] != a.tag and not tag_exists(r["stamp"]):
             die("%s carries [%s], which is neither %s nor an existing tag; "
                 "its link would be dead" % (r["path"], r["stamp"], a.tag))
-    mine = [r for r in rs if r["stamp"] == a.tag]
-    if not mine:
+    if not any(r["stamp"] == a.tag for r in rs):
         die("no binary in %s carries [<fork>/%s]" % (a.dist, a.tag))
+    mine = rs
     names = [r["asset"] for r in rs]
     if len(set(names)) != len(names):
         die("asset names are not unique")
@@ -179,13 +186,13 @@ def main():
     for r in mine:
         shutil.copy2(r["path"], os.path.join(out, r["asset"]))
 
-    body = open(intro).read().rstrip("\n") + "\n\n" + INTRO + "\n\n## Downloads\n\n" + render(rs) + "\n"
+    body = open(intro).read().rstrip("\n") + "\n\n" + INTRO + "\n\n## Downloads\n\n" + render(a.tag, rs) + "\n"
     notes = os.path.join(out, "notes.md")
     with open(notes, "w") as f:
         f.write(body)
 
-    print("%s: %d assets staged in %s, %d more listed from earlier releases"
-          % (a.tag, len(mine), out, len(rs) - len(mine)))
+    print("%s: %d assets staged in %s, %d of them stamped %s"
+          % (a.tag, len(mine), out, sum(r["stamp"] == a.tag for r in rs), a.tag))
     for r in mine:
         n = os.path.getsize(os.path.join(out, r["asset"]))
         warn = "  (%d chars, FFS limit %d)" % (len(r["asset"]), FFS_NAME_MAX) \

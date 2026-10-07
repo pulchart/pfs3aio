@@ -11,8 +11,8 @@
 #
 # Arguments after "--" go to make, to build part of the set:
 #   sh publish.sh 20260920-1 -- TIERS="080" INSTALL_TOOLCHAINS=gcc6
-# Binaries left in dist/ from an earlier tag stay in the table and link to
-# that tag's release.
+# Binaries left in dist/ from an earlier tag are uploaded with the new release
+# under that tag's name, so every release holds a complete set.
 #
 # -n prints what would run. --push pushes the branch and the tag; the draft
 # is never created here.
