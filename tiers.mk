@@ -70,6 +70,10 @@ TIER_NOTE_080 = no Line-A
 TIER_NOTE_SINCE_080 = 20260913-1
 TIER_NOTE_080a = with Line-A
 
+# Builds the author runs, <tier>:<toolchain>, shown green in the release table.
+# Every other badge is grey: those are there to compare compilers and CPUs.
+RELEASE_PICKS = 000:gcc16 020:gcc16
+
 # Highest CPU Musashi implements, so the harnesses know which tiers they
 # cannot run at all.
 EMU_MAXCPU = 68040
