@@ -5,6 +5,8 @@
 build/
 compare/
 dist-vbcc/
+/dist/
+/release/
 *.vs
 boot
 # upstream's makefile builds this into the tree root

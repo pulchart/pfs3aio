@@ -1,0 +1,200 @@
+#!/usr/bin/env python3
+# Stages a GitHub release: renamed assets, the release body and the command
+# that creates the draft.
+#
+#   python3 release-table.py <tag> [--dist DIR] [--out DIR]
+#
+# Every binary in DIST that carries [<fork>/<tag>] in its own $VER string is
+# copied to OUT/<tag>/ as pfs3aio-<stamp>-<tier>-<toolchain>. The table in the
+# body lists every binary in DIST and links each one to the release its stamp
+# names, so builds carried over from an earlier tag point at that release and
+# are not uploaded twice. Columns come from the binaries and from tiers.mk,
+# never from a second copy of the naming rules.
+#
+# Nothing is created on GitHub: the gh command is printed, not run.
+
+import argparse
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+REPO = "pulchart/pfs3aio"
+HERE = os.path.dirname(os.path.abspath(__file__))
+TIERS_MK = os.environ.get("TIERS_MK", os.path.join(HERE, "tiers.mk"))
+NOTES_DIR = os.path.join(HERE, "release-notes")
+FFS_NAME_MAX = 30
+STAMP_RE = re.compile(r"[A-Za-z0-9._-]+$")
+
+# Column order; a toolchain not listed goes last, alphabetically.
+ORDER = ["gcc13", "gcc6", "gcc15", "gcc16", "vbcc"]
+
+INTRO = (
+    "Every binary names its build in the `$VER` string, readable with `Version <file> FULL`. "
+    "These are not official builds and are untested, use them at your own risk. "
+    "Reports go to [issues](https://github.com/%s/issues)." % REPO
+)
+
+
+def die(msg):
+    sys.exit("release-table.py: " + msg)
+
+
+def tier_field(field, tier):
+    pat = re.compile(r"^TIER_%s_%s\s*=\s*(.+?)\s*$" % (field, tier), re.M)
+    m = pat.search(open(TIERS_MK).read())
+    return m.group(1) if m else None
+
+
+def runs_on(tier, stamp):
+    lo, hi = tier_field("MINCPU", tier), tier_field("MAXCPU", tier)
+    if not lo or not hi:
+        die("tier %s is not in %s" % (tier, TIERS_MK))
+    out = "%s only" % lo if lo == hi else "%s to %s" % (lo, hi)
+    # TIER_NOTE_<tier> separates two builds naming the same CPU. It holds for
+    # binaries stamped TIER_NOTE_SINCE_<tier> or later; stamps are dates, so
+    # they compare as strings.
+    note = tier_field("NOTE", tier)
+    since = tier_field("NOTE_SINCE", tier)
+    if note and (not since or stamp >= since):
+        out = "%s (%s)" % (out, note)
+    return out
+
+
+def brackets(path):
+    with open(path, "rb") as f:
+        blob = f.read()
+    m = re.search(rb"\$VER:[^\x00]*?((?:\[[^\]]*\])+)", blob)
+    return m.group(1).decode() if m else None
+
+
+def cc_of(bracket):
+    return bracket[1:].split("/", 1)[0]
+
+
+def ref_of(bracket):
+    # The origin bracket, [<fork>/<tag or commit>], names the release the
+    # binary belongs to.
+    m = re.search(r"\[[^/\]]+/([^\]]+)\]$", bracket)
+    if not m:
+        die("no origin bracket in %s" % bracket)
+    return m.group(1)
+
+
+def tag_exists(name):
+    r = subprocess.run(["git", "rev-parse", "-q", "--verify", "refs/tags/" + name],
+                       capture_output=True, cwd=HERE)
+    return r.returncode == 0
+
+
+def rows(dist):
+    out = []
+    for tier in sorted(os.listdir(dist)):
+        d = os.path.join(dist, tier)
+        if not os.path.isdir(d):
+            continue
+        for name in sorted(os.listdir(d)):
+            path = os.path.join(d, name)
+            tag = brackets(path)
+            if not tag:
+                die("no $VER brackets in %s" % path)
+            stamp = ref_of(tag)
+            if not STAMP_RE.match(stamp):
+                die("%s: stamp %r has characters that break a URL" % (path, stamp))
+            if "." not in name:
+                die("%s: expected pfs3aio.<toolchain>" % path)
+            tc = name.split(".", 1)[1]
+            out.append({
+                "tier": tier,
+                "tc": tc,
+                "path": path,
+                "cc": cc_of(tag),
+                "stamp": stamp,
+                "asset": "pfs3aio-%s-%s-%s" % (stamp, tier, tc),
+            })
+    return out
+
+
+def url(r):
+    return "https://github.com/%s/releases/download/%s/%s" % (REPO, r["stamp"], r["asset"])
+
+
+def badge(r):
+    img = ("https://img.shields.io/github/downloads/%s/%s/%s"
+           "?displayAssetName=false&label=%s&color=blue"
+           % (REPO, r["stamp"], r["asset"], r["cc"]))
+    return "[![%s](%s)](%s)" % (r["cc"], img, url(r))
+
+
+def render(rs):
+    tcs = sorted({r["tc"] for r in rs},
+                 key=lambda t: (ORDER.index(t) if t in ORDER else len(ORDER), t))
+    label = {r["tc"]: r["cc"] for r in rs}
+    cell = {(r["tier"], r["tc"]): r for r in rs}
+    tiers = sorted({r["tier"] for r in rs})
+
+    lines = ["| build | runs on | " + " | ".join(label[t] for t in tcs) + " |",
+             "|---|---|" + "---|" * len(tcs)]
+    for tier in tiers:
+        cells = [badge(cell[(tier, t)]) if (tier, t) in cell else "-" for t in tcs]
+        newest = max(r["stamp"] for r in rs if r["tier"] == tier)
+        lines.append("| `%s` | %s | %s |" % (tier, runs_on(tier, newest), " | ".join(cells)))
+    return "\n".join(lines)
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Stage a GitHub release for one tag.")
+    ap.add_argument("tag")
+    ap.add_argument("--dist", default=os.path.join(HERE, "dist"),
+                    help="binaries, laid out <dist>/<tier>/pfs3aio.<tc>")
+    ap.add_argument("--out", default=os.path.join(HERE, "release"),
+                    help="staging directory, one subdirectory per tag")
+    a = ap.parse_args()
+
+    if not os.path.isdir(a.dist):
+        die("no such directory: %s" % a.dist)
+    intro = os.path.join(NOTES_DIR, a.tag + ".md")
+    if not os.path.isfile(intro):
+        die("no %s" % intro)
+
+    rs = rows(a.dist)
+    for r in rs:
+        if r["stamp"] != a.tag and not tag_exists(r["stamp"]):
+            die("%s carries [%s], which is neither %s nor an existing tag; "
+                "its link would be dead" % (r["path"], r["stamp"], a.tag))
+    mine = [r for r in rs if r["stamp"] == a.tag]
+    if not mine:
+        die("no binary in %s carries [<fork>/%s]" % (a.dist, a.tag))
+    names = [r["asset"] for r in rs]
+    if len(set(names)) != len(names):
+        die("asset names are not unique")
+
+    out = os.path.join(a.out, a.tag)
+    os.makedirs(out, exist_ok=True)
+    # Only what an earlier run of this script put there.
+    for old in os.listdir(out):
+        if old == "notes.md" or old.startswith("pfs3aio-"):
+            os.remove(os.path.join(out, old))
+    for r in mine:
+        shutil.copy2(r["path"], os.path.join(out, r["asset"]))
+
+    body = open(intro).read().rstrip("\n") + "\n\n" + INTRO + "\n\n## Downloads\n\n" + render(rs) + "\n"
+    notes = os.path.join(out, "notes.md")
+    with open(notes, "w") as f:
+        f.write(body)
+
+    print("%s: %d assets staged in %s, %d more listed from earlier releases"
+          % (a.tag, len(mine), out, len(rs) - len(mine)))
+    for r in mine:
+        n = os.path.getsize(os.path.join(out, r["asset"]))
+        warn = "  (%d chars, FFS limit %d)" % (len(r["asset"]), FFS_NAME_MAX) \
+            if len(r["asset"]) > FFS_NAME_MAX else ""
+        print("  %-36s %8d bytes%s" % (r["asset"], n, warn))
+    print("\ncreate the draft after the tag is pushed:\n")
+    print("gh release create %s --repo %s --draft --verify-tag --title %s \\\n  --notes-file %s \\"
+          % (a.tag, REPO, a.tag, notes))
+    print("  " + " \\\n  ".join(os.path.join(out, r["asset"]) for r in mine))
+
+
+main()

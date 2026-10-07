@@ -37,7 +37,7 @@ CFLAGS_COMMON = -Os -fbbb=+ -noixemul -fomit-frame-pointer -nostartfiles -mregpa
 
 include tiers.mk
 
-# Not dist/: that holds the published binaries, which are tracked.
+# Not dist/: that holds the release binaries.
 OUTDIR = build
 OBJDIR = $(OUTDIR)/obj
 
@@ -98,9 +98,9 @@ help:
 	@echo "Usage: make [target]"
 	@echo ""
 	@echo "Targets:"
-	@echo "  all      Build pfs3aio for $(TIERS) into dist/"
-	@echo "  asm      Emit assembly for the instruction audit into dist/asm/"
-	@echo "  clean    Remove dist/ and legacy root-level build artifacts"
+	@echo "  all      Build pfs3aio for $(TIERS) into $(OUTDIR)/"
+	@echo "  asm      Emit assembly for the instruction audit into $(OUTDIR)/asm/"
+	@echo "  clean    Remove $(OUTDIR)/ and legacy root-level build artifacts"
 	@echo "  help     Show this help text"
 
 check-cc:
