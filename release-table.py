@@ -33,7 +33,8 @@ ORDER = ["gcc13", "gcc6", "gcc15", "gcc16", "vbcc"]
 INTRO = (
     "Every binary names its build in the `$VER` string, readable with `Version <file> FULL`. "
     "These are not official builds and are untested, use them at your own risk. "
-    "Reports go to [issues](https://github.com/%s/issues)." % REPO
+    "Reports go to [issues](https://github.com/%s/issues). "
+    "Green builds are the ones the author runs, grey ones are for comparing compilers and CPUs." % REPO
 )
 
 
@@ -66,6 +67,15 @@ def runs_on(tier, stamp):
     since = tier_field("NOTE_SINCE", tier)
     if note and (not since or stamp >= since):
         out = "%s (%s)" % (out, note)
+    return out
+
+
+def picks():
+    m = re.search(r"^RELEASE_PICKS\s*=\s*(.*?)\s*$", open(TIERS_MK).read(), re.M)
+    out = set(m.group(1).split()) if m else set()
+    for p in out:
+        if not tier_field("MINCPU", p.split(":")[0]):
+            die("RELEASE_PICKS names %s, and that tier is not in %s" % (p, TIERS_MK))
     return out
 
 
@@ -128,9 +138,10 @@ def url(tag, r):
 
 
 def badge(tag, r):
+    color = "green" if "%s:%s" % (r["tier"], r["tc"]) in picks() else "lightgrey"
     img = ("https://img.shields.io/github/downloads/%s/%s/%s"
-           "?displayAssetName=false&label=%s&color=blue"
-           % (REPO, tag, r["asset"], r["cc"]))
+           "?displayAssetName=false&label=%s&color=%s"
+           % (REPO, tag, r["asset"], r["cc"], color))
     return "[![%s](%s)](%s)" % (r["cc"], img, url(tag, r))
 
 
