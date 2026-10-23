@@ -31,7 +31,7 @@ GCC_IMAGE=${GCC_IMAGE:-docker.io/stefanreinauer/amiga-gcc}
 GCC6_TAG=${GCC6_TAG:-gcc-v6.5.0b-20251218}
 GCC13_TAG=${GCC13_TAG:-gcc-v13.4}
 GCC15_TAG=${GCC15_TAG:-gcc-v15.2}
-GCC16_TAG=${GCC16_TAG:-gcc-v16.1}
+GCC16_TAG=${GCC16_TAG:-gcc-v16.2}
 NDK=$VBCC/NDK/Include_H
 CPUS=${CPUS:-"68000 68020 68030 68040"}
 TOOLCHAINS=${TOOLCHAINS:-"gcc6 gcc13 gcc15 gcc16 vbcc"}
@@ -55,7 +55,7 @@ gflag_tier() { tier_gccflag "$1"; }
 gccbuild() {	# $1=tag $2=tier $3=outfile-rel $4=extra flags
 	podman run --rm --security-opt label=disable -v "$ROOT":/src -w /src \
 		"$GCC_IMAGE:$1" /opt/amiga/bin/m68k-amigaos-gcc $GFLAGS \
-		$4 "$(gflag_tier "$2")" -o "$3" tests/m68k/bench_m68k.c
+		$4 $(gflag_tier "$2") -o "$3" tests/m68k/bench_m68k.c
 }
 
 build() {	# $1=toolchain $2=tier

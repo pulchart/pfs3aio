@@ -34,6 +34,18 @@ vr.VamosHandlerRuntime.setup = setup
 vamos_cpu.patch_attn_flags()
 vamos_cpu.count_cycles()
 
+# The handler arms a five second writeback deadline on timer.device, and the
+# emulator's immediate replies would expire it on the next packet. Replies are
+# held instead. The clock stays virtual so the cycle counts do not depend on the
+# host; tests/fi.py uses real time because it checks function, not cost.
+from contextlib import ExitStack  # noqa: E402
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+from timer_device import DeferredTimers  # noqa: E402
+
+_timer_patches = ExitStack()
+DeferredTimers().install(_timer_patches)
+
 import amifuse.fuse_fs as ff  # noqa: E402  (after the patches above)
 
 rc = 0

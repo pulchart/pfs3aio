@@ -1,6 +1,6 @@
 # Building pfs3aio with several m68k-amigaos toolchains
 
-Reference for building this tree with gcc 6.5, 13.4, 15.2, 16.1 and vbcc, one build per target CPU from 68000 to 68060, and for the compiler issues found while doing it. `tiers.mk` is the list; this file follows it.
+Reference for building this tree with gcc 6.5, 13.4, 15.2, 16.2 and vbcc, one build per target CPU from 68000 to 68060, and for the compiler issues found while doing it. `tiers.mk` is the list; this file follows it.
 
 Everything is driven by `GNUmakefile`, which only selects a toolchain and an output directory; the flags live in `makefile.gcc` and `makefile.vbcc`, so the builds differ only by compiler. `makefile` is upstream's and is left alone, so a plain `make` runs ours and `make -f makefile` runs theirs.
 
@@ -24,11 +24,11 @@ make install INSTALL_DIR=/tmp/x       # dry run somewhere harmless
 Resulting layout, one directory per target CPU:
 
 ```
-/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc6     66144
-/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc13    65848
-/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc15    66468
-/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc16    66816
-/opt/AmigaOS/pfs/v20.0/000/pfs3aio.vbcc     85572
+/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc6     66408
+/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc13    66104
+/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc15    66684
+/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc16    66544
+/opt/AmigaOS/pfs/v20.0/000/pfs3aio.vbcc     85840
 ```
 
 ## The toolchains
@@ -40,7 +40,7 @@ Several gcc versions from one image family, plus vbcc:
 | gcc6 | 6.5.0b | `gcc-v6.5.0b-20251218` | pinned, see below |
 | gcc13 | 13.4.0b | `gcc-v13.4` | nothing |
 | gcc15 | 15.2.0 | `gcc-v15.2` | `-std=gnu17` |
-| gcc16 | 16.1.1b | `gcc-v16.1` | `-std=gnu17` |
+| gcc16 | 16.2.0b | `gcc-v16.2` | `-std=gnu17` |
 | vbcc | 0.9 | host install at `/opt/vbcc`, NDK at `/opt/vbcc/NDK` | see "vbcc" below |
 
 Nothing has to be bootstrapped. `make all` pulls what it needs; each image is 5 to 10 GB unpacked.
@@ -57,11 +57,11 @@ One build per target CPU, each named after the machine you would install it on; 
 
 | toolchain | 000 | 020 | 030 | 040 | 060 |
 |---|---|---|---|---|---|
-| gcc 6.5.0b | 66144 | - | 64772 | 65184 | 64812 |
-| gcc 13.4.0b | 65848 | 63872 | 63816 | 64020 | 63872 |
-| gcc 15.2.0 | 66468 | 64292 | 64328 | 64444 | 64292 |
-| gcc 16.1.1b | 66816 | 64524 | 64812 | 64864 | 64524 |
-| vbcc | 85572 | 79628 | - | - | - |
+| gcc 6.5.0b | 66408 | - | 65036 | 65444 | 65060 |
+| gcc 13.4.0b | 66104 | 64152 | 64096 | 64300 | 64152 |
+| gcc 15.2.0 | 66684 | 64536 | 64568 | 64684 | 64536 |
+| gcc 16.2.0b | 66544 | 64592 | 64772 | 64944 | 64592 |
+| vbcc | 85840 | 79888 | - | - | - |
 
 Two gaps, both recorded as `TIER_SKIP` in `tiers.mk`. gcc 6.5 has no `020` build: its `-m68020-60` is not 68060-safe, see "Target CPU: 68060". vbcc builds only `000` and `020`: it generates the same code for `-cpu=68020`, `68030` and `68060`, so the other two would be duplicate binaries, and it is a comparison toolchain rather than one that ships.
 
@@ -126,36 +126,36 @@ On a 68020, against the same source built `000`. Positive means the `060` build 
 
 | | fmt | wr | rd | ls | create |
 |---|---|---|---|---|---|
-| gcc 6.5, 512B | +1% | +18% | +1% | +20% | +4% |
-| gcc 13.4, 512B | +3% | +14% | -13% | +18% | +2% |
-| gcc 15.2, 512B | +4% | +15% | -6% | +19% | +3% |
-| gcc 16.1, 512B | +9% | +18% | +9% | +20% | +7% |
-| vbcc, 512B | +5% | +10% | +14% | +2% | +8% |
-| gcc 6.5, 4K | +2% | +7% | -4% | +15% | +0% |
-| gcc 13.4, 4K | +3% | +6% | -5% | +18% | +6% |
-| gcc 15.2, 4K | +4% | +9% | +2% | +20% | +7% |
-| gcc 16.1, 4K | +7% | +13% | +13% | +20% | +9% |
-| vbcc, 4K | +4% | +9% | +15% | +4% | +7% |
+| gcc 6.5, 512B | +0% | +22% | +2% | -1% | +3% |
+| gcc 13.4, 512B | +3% | +17% | -13% | +1% | +2% |
+| gcc 15.2, 512B | +4% | +18% | -5% | +2% | +3% |
+| gcc 16.2, 512B | +4% | +19% | -1% | -1% | +3% |
+| vbcc, 512B | +5% | +11% | +15% | +16% | +8% |
+| gcc 6.5, 4K | +2% | +6% | -5% | -4% | -1% |
+| gcc 13.4, 4K | +3% | +5% | -5% | +4% | +5% |
+| gcc 15.2, 4K | +3% | +8% | +3% | +6% | +7% |
+| gcc 16.2, 4K | +4% | +6% | +0% | -1% | +2% |
+| vbcc, 4K | +4% | +10% | +17% | +16% | +7% |
 
-The payoff sits in the write and the directory listing, where hardware `muls.l`/`divs.l` replace libgcc helpers; format and file creation gain less, and on reads the `000` build is sometimes faster. The CPU is worth more than the flag: the same `000` binary moved from a 68000 to a 68020 divides the write by 1.71x to 2.11x, against 1.22x at best for choosing the `060` build.
+The payoff sits in the write, where hardware `muls.l`/`divs.l` replace libgcc helpers; the other operations gain little, and on reads the `000` build is sometimes faster. The CPU is worth more than the flag: the same `000` binary moved from a 68000 to a 68020 roughly halves the write, which choosing the `060` build does not approach.
 
 The negative read column is most likely an artifact. The `060` build is compiled `-m68060` while Musashi charges every build at 68020 prices, so its `divu.l` is billed 84 cycles against a magic-multiply sequence on the `000` side. On real 68060 hardware that instruction is the fast one, so these figures are a lower bound.
 
 ### What the synthetic workload shows about codegen
 
-`bench.sh` ranks gcc 15.2 far worse than gcc 13.4 on a 68000, 237M against 154M cycles, where the driver has 15.2 slightly ahead. The whole gap is one loop and one transformation. For `if (w & (1UL << b)) sum++` gcc 6.5 emits `btst d5,d6` and a branch, 6 cycles; gcc 15.2 and 16.1 go branchless with `lsr.l d0,d3` / `and.l #1,d3`. A register-count `lsr.l` costs 8+2n cycles on a 68000, around 39 at n averaged over 0-31, and a flat 6 on a 68020, which is why the same loop is 2.4x worse on a 68000 and only 31% worse on a 68020.
+`bench.sh` ranks gcc 15.2 far worse than gcc 13.4 on a 68000, 237M against 154M cycles, where the driver has 15.2 slightly ahead. The whole gap is one loop and one transformation. For `if (w & (1UL << b)) sum++` gcc 6.5 emits `btst d5,d6` and a branch, 6 cycles; gcc 15.2 and 16.2 go branchless with `lsr.l d0,d3` / `and.l #1,d3`. A register-count `lsr.l` costs 8+2n cycles on a 68000, around 39 at n averaged over 0-31, and a flat 6 on a 68020, which is why the same loop is 2.4x worse on a 68000 and only 31% worse on a 68020.
 
 It does not reach the driver. Register-count shifts over the whole tree, `000` build:
 
 | build | register-count shifts | all shifts |
 |---|---|---|
 | gcc 6.5 | 84 | 330 |
-| gcc 13.4 | 83 | 209 |
-| gcc 15.2 | 82 | 211 |
-| gcc 16.1 | 84 | 331 |
+| gcc 13.4 | 83 | 206 |
+| gcc 15.2 | 82 | 208 |
+| gcc 16.2 | 84 | 316 |
 | vbcc | 176 | 471 |
 
-The gcc versions are level. vbcc uses twice as many, which is part of why it is the most expensive build everywhere.
+The gcc versions are level. vbcc uses twice as many, which is part of why it is the most expensive build in nearly every column.
 
 So a synthetic loop shows a mechanism and cannot rank toolchains: whether a transformation matters depends on how often the real code hits it.
 
@@ -187,6 +187,7 @@ Everything else stays flat: entry count does not move `fmt` or `wr`, payload siz
 
 Emulator behaviour worked around in `tests/m68k/vamos_cpu.py` and `tests/m68k/driverbench.py`:
 
+- timer requests are answered at once, which would expire the handler's five second writeback deadline between two packets. `driverbench.py` holds the replies with `tests/timer_device.py` and never advances the clock.
 - vamos derives `exec.library`'s `AttnFlags` from the CPU name but compares against `"68030(fake)"`, which machine68k no longer reports, so a `-C 68030` run leaves the field at 0 and any 68020+ binary aborts with alert `00068020` before reaching `main`.
 - Cycles have to be accumulated in small chunks. amifuse asks for the whole handler in one call, and that call unwinds with `UnsupportedFeatureError` at `WaitPkt`: the result object is never produced and everything up to that point is lost. At a 100000-cycle chunk the same PFS3 write measured 72681 cycles for one build and 886009 for another while both issued exactly 87 block writes. At 1000, vamos's own figure, the two come out 929k and 1001k, and dropping to 200 moves them less than 1%.
 - amifuse hardwires the emulated CPU to 68020 with no option for it. `vamos` takes `-C`, but not `68010`, so there is no 68010 column.
@@ -209,7 +210,7 @@ $VER: Professional-File-System-III 20.0 [gcc16.1/030][020-040][jpu/e4bb995] PFS3
 | `080` | `-m68060 -mtune=68080 -Wa,-m68080` | 68080 only | `[<cc>/080][080]` |
 | `080a` | `-m68080` | 68080 only, line-A | `[<cc>/080a][080]` |
 
-`<cc>` is `gcc6.5`, `gcc13.4`, `gcc15.2`, `gcc16.1` or `vbcc`. The first field is what the build is tuned for, the second where it runs. The range alone would not identify a binary: `030` and `040` share `020-040`, `020` and `060` share `020+`, `080` and `080a` share `080`.
+`<cc>` is `gcc6.5`, `gcc13.4`, `gcc15.2`, `gcc16.2` or `vbcc`. The first field is what the build is tuned for, the second where it runs. The range alone would not identify a binary: `030` and `040` share `020-040`, `020` and `060` share `020+`, `080` and `080a` share `080`.
 
 The last bracket is the origin, `[<fork>/<tag or commit>]`, the tag when the build came from a tagged commit. A build made with upstream's `makefile` carries no origin bracket, since it passes none of these defines.
 
@@ -315,7 +316,7 @@ No AMMX: not one E-register or SIMD instruction. `-m68080` uses the integer exte
 
 `-m68080` selects the base multilib, so libgcc and libnix come from the plain 68000 build. The driver calls almost nothing from them, since the 68080 has the division and multiplication in hardware.
 
-`080a` is the smallest gcc 6.5 produces, 63748 bytes, from the shorter immediate forms; `080` is 64504 and the `060` build 64816.
+`080a` is the smallest gcc 6.5 produces, 63988 bytes, from the shorter immediate forms; `080` is 64760 and the `060` build 65060.
 
 ### Counting instructions: use the compiler, not objdump
 
