@@ -67,6 +67,10 @@ TIERS_060 = $(foreach t,$(TIERS),$(if $(filter 68060,$(TIER_MAXCPU_$(t))),$(t)))
 TIERS_FOR = $(foreach t,$(TIERS),$(if $(filter $(1),$(TIER_SKIP_$(t))),,$(t)))
 TIERS_NOT_060 = $(filter-out $(TIERS_060),$(TIERS))
 
+# Pairs toolchain:tier that tiers.mk excludes, so install and dist never pick
+# up a stale build of one that is left in $(OUT).
+SKIPPED = $(foreach t,$(TIERS),$(foreach s,$(TIER_SKIP_$(t)),$(s):$(t)))
+
 # Install destination. Layout matches fat95 and sfs under /opt/AmigaOS:
 # <version>/<cpu>/<binary>.
 INSTALL_DIR ?= /opt/AmigaOS/pfs/v20.0
@@ -233,6 +237,7 @@ install: $(INSTALL_TOOLCHAINS)
 	@for cpu in $(TIERS); do \
 		mkdir -p "$(INSTALL_DIR)/$$cpu"; \
 		for tc in $(INSTALL_TOOLCHAINS); do \
+			case " $(SKIPPED) " in *" $$tc:$$cpu "*) continue;; esac; \
 			src="$(OUT)/$$tc/$$cpu/pfs3aio"; \
 			dst="$(INSTALL_DIR)/$$cpu/pfs3aio.$$tc"; \
 			[ -f "$$src" ] || { printf "  %-8s %-6s -> skipped, see TIER_SKIP in tiers.mk\n" "$$tc" "$$cpu"; continue; }; \
@@ -245,6 +250,7 @@ dist: $(INSTALL_TOOLCHAINS)
 	@for cpu in $(TIERS); do \
 		mkdir -p "$(DIST_DIR)/$$cpu"; \
 		for tc in $(INSTALL_TOOLCHAINS); do \
+			case " $(SKIPPED) " in *" $$tc:$$cpu "*) continue;; esac; \
 			src="$(OUT)/$$tc/$$cpu/pfs3aio"; \
 			[ -f "$$src" ] || continue; \
 			dst="$(DIST_DIR)/$$cpu/pfs3aio.$$tc"; \
