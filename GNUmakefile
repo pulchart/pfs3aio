@@ -24,7 +24,7 @@ GCC_IMAGE ?= docker.io/stefanreinauer/amiga-gcc
 GCC6_TAG ?= gcc-v6.5.0b-20251218
 GCC13_TAG ?= gcc-v13.4
 GCC15_TAG ?= gcc-v15.2
-GCC16_TAG ?= gcc-v16.1
+GCC16_TAG ?= gcc-v16.2
 VBCC ?= /opt/vbcc
 
 # gcc 6.5 takes a dated tag, not the floating one: that now carries a build
@@ -97,7 +97,7 @@ help:
 	@echo "  gcc6            gcc 6.5.0b        -> $(OUT)/gcc6/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
 	@echo "  gcc13           gcc 13.4.0b       -> $(OUT)/gcc13/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
 	@echo "  gcc15           gcc 15.2.0        -> $(OUT)/gcc15/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
-	@echo "  gcc16           gcc 16.1.1b       -> $(OUT)/gcc16/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
+	@echo "  gcc16           gcc 16.2.0b       -> $(OUT)/gcc16/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
 	@echo "  vbcc            vbcc              -> $(OUT)/vbcc/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
 	@echo "  sizes           Print the size table for whatever has been built"
 	@echo "  sibcall-proof   Show the RawRead miscompilation with/without the flag"
@@ -138,7 +138,7 @@ endef
 $(eval $(call GCC_RULES,gcc6,gcc 6.5.0b,GCC6))
 $(eval $(call GCC_RULES,gcc13,gcc 13.4.0b,GCC13))
 $(eval $(call GCC_RULES,gcc15,gcc 15.2.0,GCC15))
-$(eval $(call GCC_RULES,gcc16,gcc 16.1.1b,GCC16))
+$(eval $(call GCC_RULES,gcc16,gcc 16.2.0b,GCC16))
 
 # Delegates to makefile.vbcc: vbcc shares no flags or libraries with gcc.
 vbcc: | $(OUT)

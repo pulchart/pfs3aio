@@ -5,8 +5,8 @@
 # MINCPU/MAXCPU pair below, not something the name carries.
 #
 # Read by makefile.gcc, makefile.vbcc and GNUmakefile, and from /bin/sh by
-# tests/m68k/tiers.sh. Keep the "TIER_<FIELD>_<tier> = value" shape and every
-# value one word: tests/m68k/tiers.sh parses this file with sed.
+# tests/m68k/tiers.sh. Keep the "TIER_<FIELD>_<tier> = value" shape, one line
+# per value, and no quotes: tests/m68k/tiers.sh parses this file with sed.
 #
 # Why each flag and each gap: TOOLCHAINS.md, "Target CPU: 68060".
 
