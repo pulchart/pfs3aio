@@ -100,12 +100,7 @@ TIER_MAXCPU_080l = 68080
 TIER_NOTE_080 = no Line-A
 TIER_NOTE_SINCE_080 = 20260913-1
 TIER_NOTE_080a = with Line-A
-TIER_NOTE_000l = large file
-TIER_NOTE_020l = large file
-TIER_NOTE_030l = large file
-TIER_NOTE_040l = large file
-TIER_NOTE_060l = large file
-TIER_NOTE_080l = no Line-A, large file
+TIER_NOTE_080l = no Line-A
 
 # Builds the author runs, <tier>:<toolchain>, shown green in the release table.
 # Every other badge is grey: those are there to compare compilers and CPUs.
