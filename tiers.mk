@@ -32,10 +32,10 @@ TIER_CFLAGS_080l = -m68060 -mtune=68080 -Wa,-m68080
 #   gcc6: its -m68020-60 is not 68060 safe, unlike 13.4 and later
 #   080:  only gcc 6.5 has -m68080 and -mtune=68080
 TIER_SKIP_020 = gcc6
-TIER_SKIP_080 = gcc13 gcc15 gcc16
-TIER_SKIP_080a = gcc13 gcc15 gcc16
+TIER_SKIP_080 = gcc13 gcc16
+TIER_SKIP_080a = gcc13 gcc16
 TIER_SKIP_020l = gcc6
-TIER_SKIP_080l = gcc13 gcc15 gcc16
+TIER_SKIP_080l = gcc13 gcc16
 
 # Lowest CPU the build runs on, so a harness knows which emulated CPU can run
 # it.

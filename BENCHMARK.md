@@ -14,7 +14,7 @@ The operations, on a 32 MiB image:
 
 The handler arms a five second writeback deadline on `timer.device`. The emulator answers timer requests at once, which would expire it between two packets, so the harness holds the replies and never advances the clock. Figures taken with immediate replies are not comparable.
 
-Toolchains: gcc 6.5.0b, 13.4.0b, 15.2.0 and 16.2.0b, all from `docker.io/stefanreinauer/amiga-gcc`.
+Toolchains: gcc 6.5.0b, 13.4.0b and 16.2.0b, all from `docker.io/stefanreinauer/amiga-gcc`.
 
 The tables use the `000` build and the `060` build of each toolchain. The rest are under "Which build for which machine".
 
@@ -30,12 +30,9 @@ Kilocycles. The two right-aligned columns are speed relative to row 3, the basel
 | 4 | gcc 13.4 | 68000 | 000 | 615 | 1888 | 672 | 946 | _0.36x_ | _0.40x_ |
 | 5 | gcc 13.4 | 68020 | 000 | 295 | 894 | 323 | 441 | _0.75x_ | _0.87x_ |
 | 6 | gcc 13.4 | 68020 | 060 | 286 | 746 | 314 | 417 | _0.90x_ | _0.92x_ |
-| 7 | gcc 15.2 | 68000 | 000 | 606 | 1850 | 649 | 944 | _0.36x_ | _0.41x_ |
-| 8 | gcc 15.2 | 68020 | 000 | 293 | 876 | 318 | 443 | _0.77x_ | _0.86x_ |
-| 9 | gcc 15.2 | 68020 | 060 | 282 | 722 | 308 | 408 | _0.93x_ | _0.94x_ |
-| 10 | gcc 16.2 | 68000 | 000 | 608 | 1877 | 652 | 885 | _0.36x_ | _0.43x_ |
-| 11 | gcc 16.2 | 68020 | 000 | 295 | 892 | 321 | 417 | _0.75x_ | _0.92x_ |
-| 12 | gcc 16.2 | 68020 | 060 | 282 | 726 | 308 | 392 | _0.93x_ | _0.98x_ |
+| 7 | gcc 16.2 | 68000 | 000 | 608 | 1877 | 652 | 885 | _0.36x_ | _0.43x_ |
+| 8 | gcc 16.2 | 68020 | 000 | 295 | 892 | 321 | 417 | _0.75x_ | _0.92x_ |
+| 9 | gcc 16.2 | 68020 | 060 | 282 | 726 | 308 | 392 | _0.93x_ | _0.98x_ |
 
 ## Read and list
 
@@ -49,12 +46,9 @@ Kilocycles, same rows and baseline. Row 3 is the cheapest write and format; a fe
 | 4 | gcc 13.4 | 68000 | 000 | 379 | 732 | 500 | 865 | _0.39x_ | _0.39x_ |
 | 5 | gcc 13.4 | 68020 | 000 | 170 | 289 | 223 | 348 | _0.99x_ | _0.97x_ |
 | 6 | gcc 13.4 | 68020 | 060 | 192 | 286 | 234 | 335 | _1.00x_ | _1.01x_ |
-| 7 | gcc 15.2 | 68000 | 000 | 378 | 723 | 513 | 869 | _0.40x_ | _0.39x_ |
-| 8 | gcc 15.2 | 68020 | 000 | 171 | 290 | 231 | 356 | _0.99x_ | _0.95x_ |
-| 9 | gcc 15.2 | 68020 | 060 | 180 | 284 | 225 | 336 | _1.01x_ | _1.00x_ |
-| 10 | gcc 16.2 | 68000 | 000 | 372 | 675 | 450 | 763 | _0.43x_ | _0.44x_ |
-| 11 | gcc 16.2 | 68020 | 000 | 174 | 285 | 208 | 325 | _1.01x_ | _1.04x_ |
-| 12 | gcc 16.2 | 68020 | 060 | 175 | 288 | 209 | 327 | _1.00x_ | _1.03x_ |
+| 7 | gcc 16.2 | 68000 | 000 | 372 | 675 | 450 | 763 | _0.43x_ | _0.44x_ |
+| 8 | gcc 16.2 | 68020 | 000 | 174 | 285 | 208 | 325 | _1.01x_ | _1.04x_ |
+| 9 | gcc 16.2 | 68020 | 060 | 175 | 288 | 209 | 327 | _1.00x_ | _1.03x_ |
 
 ## Create a file
 
@@ -68,12 +62,9 @@ Kilocycles, one more file written into the directory the previous table lists. S
 | 4 | gcc 13.4 | 68000 | 000 | 406 | 662 | _0.45x_ | _0.44x_ |
 | 5 | gcc 13.4 | 68020 | 000 | 192 | 312 | _0.94x_ | _0.92x_ |
 | 6 | gcc 13.4 | 68020 | 060 | 189 | 295 | _0.96x_ | _0.98x_ |
-| 7 | gcc 15.2 | 68000 | 000 | 402 | 662 | _0.45x_ | _0.44x_ |
-| 8 | gcc 15.2 | 68020 | 000 | 192 | 316 | _0.94x_ | _0.91x_ |
-| 9 | gcc 15.2 | 68020 | 060 | 186 | 294 | _0.97x_ | _0.98x_ |
-| 10 | gcc 16.2 | 68000 | 000 | 391 | 592 | _0.46x_ | _0.49x_ |
-| 11 | gcc 16.2 | 68020 | 000 | 186 | 283 | _0.97x_ | _1.02x_ |
-| 12 | gcc 16.2 | 68020 | 060 | 181 | 277 | _1.00x_ | _1.04x_ |
+| 7 | gcc 16.2 | 68000 | 000 | 391 | 592 | _0.46x_ | _0.49x_ |
+| 8 | gcc 16.2 | 68020 | 000 | 186 | 283 | _0.97x_ | _1.02x_ |
+| 9 | gcc 16.2 | 68020 | 060 | 181 | 277 | _1.00x_ | _1.04x_ |
 
 ## Which build for which machine
 
@@ -89,7 +80,7 @@ One build per target CPU, named after the machine it is installed on. The `$VER`
 | `080` | `-m68060 -mtune=68080 -Wa,-m68080` | 68080 only | `[<cc>/080][080]` |
 | `080a` | `-m68080` | 68080 only, line-A | `[<cc>/080a][080]` |
 
-`<cc>` is `gcc6.5`, `gcc13.4`, `gcc15.2` or `gcc16.2`. The first field is what the build is tuned for, the second where it runs. `030` and `040` stop at the 68040 because `-m68030` and `-m68020-40` emit 64-bit `MULU.L` for divide-by-constant, which the 68060 does not implement.
+`<cc>` is `gcc6.5`, `gcc13.4` or `gcc16.2`. The first field is what the build is tuned for, the second where it runs. `030` and `040` stop at the 68040 because `-m68030` and `-m68020-40` emit 64-bit `MULU.L` for divide-by-constant, which the 68060 does not implement.
 
 gcc 6.5 has no `020` build: its `-m68020-60` emits those multiplies too, so the build would not run on a 68060.
 
@@ -139,7 +130,6 @@ Bytes.
 |---|---|---|---|---|---|
 | gcc 6.5 | 66408 | - | 65036 | 65444 | 65060 |
 | gcc 13.4 | 66104 | 64152 | 64096 | 64300 | 64152 |
-| gcc 15.2 | 66684 | 64536 | 64568 | 64684 | 64536 |
 | gcc 16.2 | 66544 | 64592 | 64772 | 64944 | 64592 |
 
 ## Observation

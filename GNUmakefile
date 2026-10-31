@@ -23,19 +23,17 @@ space := $(empty) $(empty)
 GCC_IMAGE ?= docker.io/stefanreinauer/amiga-gcc
 GCC6_TAG ?= gcc-v6.5.0b-20251218
 GCC13_TAG ?= gcc-v13.4
-GCC15_TAG ?= gcc-v15.2
 GCC16_TAG ?= gcc-v16.2
 
 # gcc 6.5 takes a dated tag, not the floating one: that now carries a build
 # which miscompiles intlcmp at 68020+. See TOOLCHAINS.md, "Issue 3".
 
-# gcc 15 and 16 default to C23, where struct.h:306 "typedef enum {false, true}
+# gcc 16 defaults to C23, where struct.h:306 "typedef enum {false, true}
 # bool;" is a syntax error. gcc 6.5 does not know -std=gnu17 at all; 13.4
 # accepts it but does not need it, and leaving it off keeps its output
 # byte-identical to what the previous locally built image produced.
 GCC6_EXTRA ?=
 GCC13_EXTRA ?=
-GCC15_EXTRA ?= -std=gnu17
 GCC16_EXTRA ?= -std=gnu17
 
 # Appended to every toolchain. Empty by default so results match a plain
@@ -79,7 +77,7 @@ RUN = $(PODMAN) run --rm --security-opt label=disable \
 
 BUILD = $(MAKE) --no-print-directory -f makefile.gcc
 
-GCC_TOOLCHAINS = gcc6 gcc13 gcc15 gcc16
+GCC_TOOLCHAINS = gcc6 gcc13 gcc16
 TOOLCHAINS = $(GCC_TOOLCHAINS)
 
 .PHONY: all $(TOOLCHAINS) sizes sibcall-proof install \
@@ -93,7 +91,6 @@ help:
 	@echo "  all             Build with every toolchain, then print sizes"
 	@echo "  gcc6            gcc 6.5.0b        -> $(OUT)/gcc6/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
 	@echo "  gcc13           gcc 13.4.0b       -> $(OUT)/gcc13/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
-	@echo "  gcc15           gcc 15.2.0        -> $(OUT)/gcc15/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
 	@echo "  gcc16           gcc 16.2.0b       -> $(OUT)/gcc16/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
 	@echo "  sizes           Print the size table for whatever has been built"
 	@echo "  sibcall-proof   Show the RawRead miscompilation with/without the flag"
@@ -106,7 +103,7 @@ help:
 	@echo "  driverbench     The real driver: format, write, read, list, create"
 	@echo "  clean           Remove $(OUT)/"
 	@echo ""
-	@echo "Knobs: OUT= COMMON_EXTRA= GCC_IMAGE= GCC6_TAG= GCC13_TAG= GCC15_TAG="
+	@echo "Knobs: OUT= COMMON_EXTRA= GCC_IMAGE= GCC6_TAG= GCC13_TAG="
 	@echo "       GCC16_TAG= PODMAN="
 	@echo "       INSTALL_DIR=$(INSTALL_DIR) INSTALL_TOOLCHAINS='$(INSTALL_TOOLCHAINS)'"
 	@echo "Example: make install INSTALL_TOOLCHAINS=gcc16"
@@ -131,7 +128,6 @@ endef
 
 $(eval $(call GCC_RULES,gcc6,gcc 6.5.0b,GCC6))
 $(eval $(call GCC_RULES,gcc13,gcc 13.4.0b,GCC13))
-$(eval $(call GCC_RULES,gcc15,gcc 15.2.0,GCC15))
 $(eval $(call GCC_RULES,gcc16,gcc 16.2.0b,GCC16))
 
 # The 68060 cannot be emulated here (Musashi stops at 68040, which has the

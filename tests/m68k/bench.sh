@@ -28,7 +28,6 @@ VAMOS=${VAMOS:-vamos}
 GCC_IMAGE=${GCC_IMAGE:-docker.io/stefanreinauer/amiga-gcc}
 GCC6_TAG=${GCC6_TAG:-gcc-v6.5.0b-20251218}
 GCC13_TAG=${GCC13_TAG:-gcc-v13.4}
-GCC15_TAG=${GCC15_TAG:-gcc-v15.2}
 GCC16_TAG=${GCC16_TAG:-gcc-v16.2}
 CPUS=${CPUS:-"68000 68020 68030 68040"}
 TOOLCHAINS=${TOOLCHAINS:-"gcc6 gcc13 gcc16"}
@@ -65,7 +64,6 @@ build() {	# $1=toolchain $2=tier
 	case $tc in
 	gcc6)  gccbuild "$GCC6_TAG" "$tier" "$rel" "" ;;
 	gcc13) gccbuild "$GCC13_TAG" "$tier" "$rel" "" ;;
-	gcc15) gccbuild "$GCC15_TAG" "$tier" "$rel" "-std=gnu17" ;;
 	gcc16) gccbuild "$GCC16_TAG" "$tier" "$rel" "-std=gnu17" ;;
 	esac
 	[ -f "$out" ]

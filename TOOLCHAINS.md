@@ -1,6 +1,6 @@
 # Building pfs3aio with several m68k-amigaos toolchains
 
-Reference for building this tree with gcc 6.5, 13.4, 15.2 and 16.2, one build per target CPU from 68000 to 68060, and for the compiler issues found while doing it. `tiers.mk` is the list; this file follows it.
+Reference for building this tree with gcc 6.5, 13.4 and 16.2, one build per target CPU from 68000 to 68060, and for the compiler issues found while doing it. `tiers.mk` is the list; this file follows it.
 
 Everything is driven by `GNUmakefile`, which only selects a toolchain and an output directory; the flags live in `makefile.gcc`, so the builds differ only by compiler. `makefile` is upstream's and is left alone, so a plain `make` runs ours and `make -f makefile` runs theirs.
 
@@ -26,7 +26,6 @@ Resulting layout, one directory per target CPU:
 ```
 /opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc6     66408
 /opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc13    66104
-/opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc15    66684
 /opt/AmigaOS/pfs/v20.0/000/pfs3aio.gcc16    66544
 ```
 
@@ -38,14 +37,13 @@ Several gcc versions from one image family:
 |---|---|---|---|
 | gcc6 | 6.5.0b | `gcc-v6.5.0b-20251218` | pinned, see below |
 | gcc13 | 13.4.0b | `gcc-v13.4` | nothing |
-| gcc15 | 15.2.0 | `gcc-v15.2` | `-std=gnu17` |
 | gcc16 | 16.2.0b | `gcc-v16.2` | `-std=gnu17` |
 
 Nothing has to be bootstrapped. `make all` pulls what it needs; each image is 5 to 10 GB unpacked.
 
 They all install into `/opt/amiga`, which the auto-detection in `makefile` finds, so none of them passes `AMIGA_PREFIX`. That is also why a plain `make` still works against a host install: `makefile` prefers `~/opt/m68k-amigaos` and falls back to `/opt/amiga`, and `AMIGA_PREFIX=` or `CC=` override it.
 
-**gcc 15 and 16 need `-std=gnu17`.** Both default to C23, where `struct.h:306`'s `typedef enum {false, true} bool;` is a syntax error. gcc 6.5 does not know the option at all. gcc 13.4 accepts it but does not need it, and leaving it off keeps its output byte-identical to what the previously used locally built image produced.
+**gcc 16 needs `-std=gnu17`.** It defaults to C23, where `struct.h:306`'s `typedef enum {false, true} bool;` is a syntax error. gcc 6.5 does not know the option at all. gcc 13.4 accepts it but does not need it, and leaving it off keeps its output byte-identical to what the previously used locally built image produced.
 
 **gcc 6.5 is pinned to a dated tag**, not the floating `gcc-v6.5.0b`, because that tag now carries a build that miscompiles `intlcmp`. See "Issue 3" below. `gcc-v6.5.0b-20251218` carries bebbo build `251015095727` and produces binaries byte-identical to a host `~/opt/m68k-amigaos` install of the same build, so the pin changed nothing that ships. `gcc-v6.5.0b-20260629`, build `260602123145`, is also clean but 88 bytes smaller on the 000 tier and 84 on the 020, so it is not a drop-in replacement for the pinned one.
 
@@ -57,12 +55,11 @@ One build per target CPU, each named after the machine you would install it on; 
 |---|---|---|---|---|---|
 | gcc 6.5.0b | 66408 | - | 65036 | 65444 | 65060 |
 | gcc 13.4.0b | 66104 | 64152 | 64096 | 64300 | 64152 |
-| gcc 15.2.0 | 66684 | 64536 | 64568 | 64684 | 64536 |
 | gcc 16.2.0b | 66544 | 64592 | 64772 | 64944 | 64592 |
 
 gcc 6.5 has no `020` build, recorded as `TIER_SKIP` in `tiers.mk`: its `-m68020-60` is not 68060-safe, see "Target CPU: 68060".
 
-All of them build the tree clean. Under `-Wall`, gcc 6.5 reports 292 warnings and gcc 15.2 reports 276; gcc 15 adds `-Warray-bounds` at `boot.c:240` and `fsresource.c:78`, which are false positives from the Amiga `*(struct ExecBase **)4` absolute-address idiom.
+All of them build the tree clean. Under `-Wall`, gcc 6.5 reports 292 warnings.
 
 ## Code quality on 68000
 
@@ -72,14 +69,12 @@ Upstream's position in PR #10 was that 6.5.0b stays the compiler for pfs3aio bec
 |---|---|---|---|---|
 | gcc 6.5 / 000 | 60804 | 19275 | 4 | 74 |
 | gcc 13.4 / 000 | 60500 | 18723 | 180 | 74 |
-| gcc 15.2 / 000 | 61124 | 18835 | 189 | 74 |
 | gcc 6.5 / 060 | 60032 | 18319 | 0 | 0 |
 | gcc 13.4 / 060 | 59032 | 18142 | 0 | 0 |
-| gcc 15.2 / 060 | 59472 | 18203 | 0 | 0 |
 
-**The `cmp #0,an` complaint is real and large.** `tst.l aN` is 68020+, so a pointer NULL test has to be synthesized on 68000. gcc 6.5 uses `move.l aN,dN` (`2008`, one word, register to register). gcc 13.4 and 15.2 use `cmpa.w #0,aN` (`b0fc 0000`, two words, with an immediate operand fetch). That is 4 occurrences against 180 and 189, roughly 360 extra bytes and an extra memory fetch on every pointer check in a driver that checks pointers constantly. On 68020 the difference vanishes: all three emit `tst.l aN`, which is why the 68020 column shows zero.
+**The `cmp #0,an` complaint is real and large.** `tst.l aN` is 68020+, so a pointer NULL test has to be synthesized on 68000. gcc 6.5 uses `move.l aN,dN` (`2008`, one word, register to register). gcc 13.4 uses `cmpa.w #0,aN` (`b0fc 0000`, two words, with an immediate operand fetch). That is 4 occurrences against 180, roughly 360 extra bytes and an extra memory fetch on every pointer check in a driver that checks pointers constantly. On 68020 the difference vanishes: all three emit `tst.l aN`, which is why the 68020 column shows zero.
 
-**The size claim does not hold for 13.4.** Despite that regression, gcc 13.4 produces less text than 6.5 in both builds, so it is winning elsewhere by more than the NULL tests cost. gcc 15.2 is bigger than 6.5 on 68000+. The absolute-addressing half of the claim was not re-verified after the objdump problem was found.
+**The size claim does not hold for 13.4.** Despite that regression, gcc 13.4 produces less text than 6.5 in both builds, so it is winning elsewhere by more than the NULL tests cost. The absolute-addressing half of the claim was not re-verified after the objdump problem was found.
 
 **No algorithmic difference in arithmetic.** They emit the same 74 libgcc helper calls on the `000` build, where 32-bit multiply and divide have no hardware instruction, and none where `muls.l`/`divs.l` exist in hardware. No compiler is picking a better or worse algorithm here.
 
@@ -125,11 +120,9 @@ On a 68020, against the same source built `000`. Positive means the `060` build 
 |---|---|---|---|---|---|
 | gcc 6.5, 512B | +0% | +22% | +2% | -1% | +3% |
 | gcc 13.4, 512B | +3% | +17% | -13% | +1% | +2% |
-| gcc 15.2, 512B | +4% | +18% | -5% | +2% | +3% |
 | gcc 16.2, 512B | +4% | +19% | -1% | -1% | +3% |
 | gcc 6.5, 4K | +2% | +6% | -5% | -4% | -1% |
 | gcc 13.4, 4K | +3% | +5% | -5% | +4% | +5% |
-| gcc 15.2, 4K | +3% | +8% | +3% | +6% | +7% |
 | gcc 16.2, 4K | +4% | +6% | +0% | -1% | +2% |
 
 The payoff sits in the write, where hardware `muls.l`/`divs.l` replace libgcc helpers; the other operations gain little, and on reads the `000` build is sometimes faster. The CPU is worth more than the flag: the same `000` binary moved from a 68000 to a 68020 roughly halves the write, which choosing the `060` build does not approach.
@@ -138,7 +131,7 @@ The negative read column is most likely an artifact. The `060` build is compiled
 
 ### What the synthetic workload shows about codegen
 
-`bench.sh` ranks gcc 15.2 far worse than gcc 13.4 on a 68000, 237M against 154M cycles, where the driver has 15.2 slightly ahead. The whole gap is one loop and one transformation. For `if (w & (1UL << b)) sum++` gcc 6.5 emits `btst d5,d6` and a branch, 6 cycles; gcc 15.2 and 16.2 go branchless with `lsr.l d0,d3` / `and.l #1,d3`. A register-count `lsr.l` costs 8+2n cycles on a 68000, around 39 at n averaged over 0-31, and a flat 6 on a 68020, which is why the same loop is 2.4x worse on a 68000 and only 31% worse on a 68020.
+One loop in `bench.sh` shows a mechanism. For `if (w & (1UL << b)) sum++` gcc 6.5 emits `btst d5,d6` and a branch, 6 cycles; gcc 16.2 goes branchless with `lsr.l d0,d3` / `and.l #1,d3`. A register-count `lsr.l` costs 8+2n cycles on a 68000, around 39 at n averaged over 0-31, and a flat 6 on a 68020.
 
 It does not reach the driver. Register-count shifts over the whole tree, `000` build:
 
@@ -146,7 +139,6 @@ It does not reach the driver. Register-count shifts over the whole tree, `000` b
 |---|---|---|
 | gcc 6.5 | 84 | 330 |
 | gcc 13.4 | 83 | 206 |
-| gcc 15.2 | 82 | 208 |
 | gcc 16.2 | 84 | 316 |
 
 The gcc versions are level.
@@ -204,7 +196,7 @@ $VER: Professional-File-System-III 20.0 [gcc16.1/030][020-040][jpu/e4bb995] PFS3
 | `080` | `-m68060 -mtune=68080 -Wa,-m68080` | 68080 only | `[<cc>/080][080]` |
 | `080a` | `-m68080` | 68080 only, line-A | `[<cc>/080a][080]` |
 
-`<cc>` is `gcc6.5`, `gcc13.4`, `gcc15.2` or `gcc16.2`. The first field is what the build is tuned for, the second where it runs. The range alone would not identify a binary: `030` and `040` share `020-040`, `020` and `060` share `020+`, `080` and `080a` share `080`.
+`<cc>` is `gcc6.5`, `gcc13.4` or `gcc16.2`. The first field is what the build is tuned for, the second where it runs. The range alone would not identify a binary: `030` and `040` share `020-040`, `020` and `060` share `020+`, `080` and `080a` share `080`.
 
 The last bracket is the origin, `[<fork>/<tag or commit>]`, the tag when the build came from a tagged commit. A build made with upstream's `makefile` carries no origin bracket, since it passes none of these defines.
 
@@ -246,8 +238,6 @@ Hardware results, `bare` ROM profile on 68060. The `020`, `030` and `040` builds
 | gcc 6.5 / 060 (`-m68060`) | **works** |
 | gcc 13.4 / 000 (`-m68000`) | **works** |
 | gcc 13.4 / 060 (`-m68060`) | **works** |
-| gcc 15.2 / 000 (`-m68000`) | **works** |
-| gcc 15.2 / 060 (`-m68060`) | **works** |
 | gcc 16.1 / 000 (`-m68000`) | **works** |
 | gcc 16.1 / 060 (`-m68060`) | **works** |
 | any / `-m68020` | fails |
@@ -265,7 +255,7 @@ Every toolchain boots here once the build avoids `-m68020`, so the choice of com
 
 ## Apollo 68080
 
-The AC68080 runs everything from the 68000 to the 68060 except the MMU instructions, so the `060` build works on it. Two builds use what the core adds, `080` and `080a`, and only gcc 6.5 can produce either: 13.4, 15.2 and 16.1 reject `-m68080`, `-mcpu=68080` and `-march=68080` alike.
+The AC68080 runs everything from the 68000 to the 68060 except the MMU instructions, so the `060` build works on it. Two builds use what the core adds, `080` and `080a`, and only gcc 6.5 can produce either: 13.4 and 16.1 reject `-m68080`, `-mcpu=68080` and `-march=68080` alike.
 
 What `-m68080` puts in the binary, counted over `directory.c`, `disk.c`, `anodes.c`, `allocation.c` and `lru.c`, 10230 instructions of which 408 are not 68060 instructions:
 
@@ -350,9 +340,9 @@ FI_CMD=none python3 tests/fi.py format tests/fixtures/small.hdf DH0 TESTVOL \
 
 ## Issue 1: sibling-call miscompilation (handled)
 
-Affects gcc 13.4 and 15.2, not 6.5. Already fixed by `-fno-optimize-sibling-calls` in `makefile`, which came from upstream commit `82afc5f`. **Do not remove that flag.** Nothing else is required.
+Affects gcc 13.4, not 6.5. Already fixed by `-fno-optimize-sibling-calls` in `makefile`, which came from upstream commit `82afc5f`. **Do not remove that flag.** Nothing else is required.
 
-`RawRead`/`RawWrite` in `disk.c` end in a tail call to `RawReadWrite_DS`/`_TD`, so gcc turns the call into a jump. With `-mregparm=3` the arguments live in registers and have to be shuffled first. gcc 13.4 and 15.2 get the shuffle wrong: `blocknr` is never moved into d2 where the callee reads it, and d2 is restored to the caller's value before the jump. Every raw sector access then uses a wrong block number.
+`RawRead`/`RawWrite` in `disk.c` end in a tail call to `RawReadWrite_DS`/`_TD`, so gcc turns the call into a jump. With `-mregparm=3` the arguments live in registers and have to be shuffled first. gcc 13.4 gets the shuffle wrong: `blocknr` is never moved into d2 where the callee reads it, and d2 is restored to the caller's value before the jump. Every raw sector access then uses a wrong block number.
 
 Reproduce with `make sibcall-proof`, which builds `disk.o` both ways and prints `RawRead`. With sibling calls enabled the `move.l d1,d2` is missing:
 
@@ -368,13 +358,13 @@ sibling calls on                  sibling calls off
 
 That d2 is really `blocknr` is visible in the callee, which compiles `if (blocknr == (ULONG)-1)` and `blocknr += g->firstblock` to `cmp.l d2,d1` and `add.l 88(a1),d2`.
 
-Cost of the flag: 0 bytes on gcc 6.5 (binaries are byte-identical, it never emits the sibling call here), 60/72 bytes on gcc 13.4, 44/40 bytes on gcc 15.2.
+Cost of the flag: 0 bytes on gcc 6.5 (binaries are byte-identical, it never emits the sibling call here), 60/72 bytes on gcc 13.4.
 
 ## Issue 2: strict aliasing (fixed)
 
-`GetExtraFields` filled a `struct extrafields` through a `UWORD *` and `AddExtraFields` read it that way. gcc 6.5 reports 34 `-Wstrict-aliasing` warnings; gcc 15.2 reports `extrafields.link` used uninitialized in `UpdateLinks` and `RemapLinks`.
+`GetExtraFields` filled a `struct extrafields` through a `UWORD *` and `AddExtraFields` read it that way. gcc 6.5 reports 34 `-Wstrict-aliasing` warnings.
 
-gcc 13.4, 15.2 and 16.2 miscompile it: `CreateLink` reuses the `link` value it stored itself before `GetExtraFields`, so the linked file never gets its link field. Deleting it then frees the file and leaves the link dangling. gcc 6.5 is not affected. The test is deleting the original of a hard link and reading the link (`tests/m68k/hardlink.py`, a column of `variants.sh`).
+gcc 13.4 and 16.2 miscompile it: `CreateLink` reuses the `link` value it stored itself before `GetExtraFields`, so the linked file never gets its link field. Deleting it then frees the file and leaves the link dangling. gcc 6.5 is not affected. The test is deleting the original of a hard link and reading the link (`tests/m68k/hardlink.py`, a column of `variants.sh`).
 
 Both functions go through a union of the struct and a `UWORD` array now. Every build also passes `-fno-strict-aliasing`, so other accesses of that kind cannot go wrong.
 
