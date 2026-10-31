@@ -64,7 +64,7 @@ TIERS_NOT_060 = $(filter-out $(TIERS_060),$(TIERS))
 
 # Pairs toolchain:tier that tiers.mk excludes, so install and dist never pick
 # up a stale build of one that is left in $(OUT).
-SKIPPED = $(foreach t,$(TIERS),$(foreach s,$(TIER_SKIP_$(t)),$(s):$(t)))
+SKIPPED = $(foreach t,$(ALL_TIERS),$(foreach s,$(TIER_SKIP_$(t)),$(s):$(t)))
 
 # Install destination. Layout matches fat95 and sfs under /opt/AmigaOS:
 # <version>/<cpu>/<binary>.
@@ -103,6 +103,8 @@ help:
 	@echo "  driverbench     The real driver: format, write, read, list, create"
 	@echo "  clean           Remove $(OUT)/"
 	@echo ""
+	@echo "Tiers: $(RELEASE_TIERS)"
+	@echo "       EXTRA=1 adds $(EXTRA_TIERS); TIERS=\"030 040\" picks any"
 	@echo "Knobs: OUT= COMMON_EXTRA= GCC_IMAGE= GCC6_TAG= GCC13_TAG="
 	@echo "       GCC16_TAG= PODMAN="
 	@echo "       INSTALL_DIR=$(INSTALL_DIR) INSTALL_TOOLCHAINS='$(INSTALL_TOOLCHAINS)'"
@@ -224,6 +226,8 @@ install: $(INSTALL_TOOLCHAINS)
 		done; \
 	done
 
+# Only the release tiers, whatever TIERS or EXTRA say.
+dist: override TIERS = $(RELEASE_TIERS)
 dist: $(INSTALL_TOOLCHAINS)
 	@for cpu in $(TIERS); do \
 		mkdir -p "$(DIST_DIR)/$$cpu"; \

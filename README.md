@@ -30,6 +30,7 @@ A build with an `l` after the tier (`020l`) handles files above 4 GiB. The other
 make              # every toolchain, one binary per target CPU, into compare/
 make install      # side by side as pfs3aio.<toolchain> under /opt/AmigaOS/pfs/v20.0
 make dist         # the release set into dist/, which git ignores
+make EXTRA=1      # also the 030, 040, 060 and 080a builds, never part of a release
 make verify       # format, write, read back, plus the instruction audits
 make -f makefile  # upstream's own single-binary build, untouched
 ```

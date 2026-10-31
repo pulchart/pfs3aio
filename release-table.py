@@ -110,11 +110,20 @@ def ref_of(bracket):
     return m.group(1)
 
 
+def release_tiers():
+    m = re.search(r"^RELEASE_TIERS\s*=\s*(.*?)\s*$", open(TIERS_MK).read(), re.M)
+    if not m:
+        die("no RELEASE_TIERS in %s" % TIERS_MK)
+    return m.group(1).split()
+
+
 def rows(dist):
     out = []
+    # An extra tier left in DIST by an earlier build is not part of a release.
+    wanted = release_tiers()
     for tier in sorted(os.listdir(dist)):
         d = os.path.join(dist, tier)
-        if not os.path.isdir(d):
+        if not os.path.isdir(d) or tier not in wanted:
             continue
         for name in sorted(os.listdir(d)):
             path = os.path.join(d, name)

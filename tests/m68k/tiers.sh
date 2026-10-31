@@ -6,8 +6,9 @@
 
 TIERS_MK=${TIERS_MK:-$ROOT/tiers.mk}
 
-tiers() {	# every tier, in table order
-	sed -n 's/^TIER_CFLAGS_\([0-9][0-9a-z]*\)[ 	]*=.*/\1/p' "$TIERS_MK"
+tiers() {	# the release tiers, plus the extra ones when EXTRA is set
+	sed -n 's/^RELEASE_TIERS[ 	]*=[ 	]*//p' "$TIERS_MK"
+	[ -z "${EXTRA:-}" ] || sed -n 's/^EXTRA_TIERS[ 	]*=[ 	]*//p' "$TIERS_MK"
 }
 
 tier_get() {	# $1=field $2=tier

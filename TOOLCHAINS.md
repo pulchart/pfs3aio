@@ -6,7 +6,8 @@ Everything is driven by `GNUmakefile`, which only selects a toolchain and an out
 
 ```sh
 make help
-make all          # every toolchain, every build, then sizes
+make all          # every toolchain, every release build, then sizes
+make all EXTRA=1  # plus the extra builds of `tiers.mk`
 make gcc13        # just one
 make sibcall-proof
 ```
@@ -16,7 +17,7 @@ Output lands in `compare/<toolchain>/<cpu>/pfs3aio`. `compare/` is gitignored. T
 `install` builds every toolchain and puts them side by side as `INSTALL_DIR/<cpu>/pfs3aio.<toolchain>`, every build, so variants can be compared on hardware without rebuilding between flashes. Defaults are every toolchain and `INSTALL_DIR=/opt/AmigaOS/pfs/v20.0`.
 
 ```sh
-make install                          # every toolchain, every build
+make install                          # every toolchain, every release build
 make install INSTALL_TOOLCHAINS=gcc16 # just one
 make install INSTALL_DIR=/tmp/x       # dry run somewhere harmless
 ```

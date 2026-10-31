@@ -10,7 +10,12 @@
 #
 # Why each flag and each gap: TOOLCHAINS.md, "Target CPU: 68060".
 
-TIERS = 000 020 030 040 060 080 080a 000l 020l 030l 040l 060l 080l
+# What a bare make builds and a release holds, then what is built only when
+# asked for: make EXTRA=1, or TIERS="030 040". The extras are not published.
+RELEASE_TIERS = 000 020 080 000l 020l 080l
+EXTRA_TIERS = 030 040 060 080a 030l 040l 060l
+ALL_TIERS = $(RELEASE_TIERS) $(EXTRA_TIERS)
+TIERS = $(RELEASE_TIERS) $(if $(EXTRA),$(EXTRA_TIERS))
 
 # gcc -m flag. Only 080a takes the line-A group, which most cores alert
 # 8000000A on; -mtune=68080 gives the rest of what the core adds.
