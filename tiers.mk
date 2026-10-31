@@ -4,7 +4,7 @@
 # directory means in dist/ and in INSTALL_DIR. Where else it runs is the
 # MINCPU/MAXCPU pair below, not something the name carries.
 #
-# Read by makefile.gcc, makefile.vbcc and GNUmakefile, and from /bin/sh by
+# Read by makefile.gcc and GNUmakefile, and from /bin/sh by
 # tests/m68k/tiers.sh. Keep the "TIER_<FIELD>_<tier> = value" shape, one line
 # per value, and no quotes: tests/m68k/tiers.sh parses this file with sed.
 #
@@ -28,38 +28,14 @@ TIER_CFLAGS_040l = -m68020-40
 TIER_CFLAGS_060l = -m68060
 TIER_CFLAGS_080l = -m68060 -mtune=68080 -Wa,-m68080
 
-# vbcc -cpu= value: the nearest plain CPU, since vbcc takes no combined ones.
-# Every vbcc build is 68060 safe whatever this says.
-TIER_VBCPU_000 = 68000
-TIER_VBCPU_020 = 68020
-TIER_VBCPU_030 = 68030
-TIER_VBCPU_040 = 68040
-TIER_VBCPU_060 = 68060
-TIER_VBCPU_000l = 68000
-TIER_VBCPU_020l = 68020
-TIER_VBCPU_030l = 68030
-TIER_VBCPU_040l = 68040
-TIER_VBCPU_060l = 68060
-
 # Toolchains that cannot build a given build, space separated.
 #   gcc6: its -m68020-60 is not 68060 safe, unlike 13.4 and later
-#   vbcc: generates the same code for 020, 030 and 060
-#   l tiers: vbcc_fastcall.s forwards no 64 bit helpers, @_rshsint64 stays
-#          undefined
-#   080:   only gcc 6.5 has -m68080 and -mtune=68080; vbcc -cpu=68080 is its
-#          68060 code
+#   080:  only gcc 6.5 has -m68080 and -mtune=68080
 TIER_SKIP_020 = gcc6
-TIER_SKIP_030 = vbcc
-TIER_SKIP_040 = vbcc
-TIER_SKIP_060 = vbcc
-TIER_SKIP_080 = gcc13 gcc15 gcc16 vbcc
-TIER_SKIP_080a = gcc13 gcc15 gcc16 vbcc
-TIER_SKIP_000l = vbcc
-TIER_SKIP_020l = gcc6 vbcc
-TIER_SKIP_030l = vbcc
-TIER_SKIP_040l = vbcc
-TIER_SKIP_060l = vbcc
-TIER_SKIP_080l = gcc13 gcc15 gcc16 vbcc
+TIER_SKIP_080 = gcc13 gcc15 gcc16
+TIER_SKIP_080a = gcc13 gcc15 gcc16
+TIER_SKIP_020l = gcc6
+TIER_SKIP_080l = gcc13 gcc15 gcc16
 
 # Lowest CPU the build runs on, so a harness knows which emulated CPU can run
 # it.

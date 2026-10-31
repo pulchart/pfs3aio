@@ -28,7 +28,7 @@ FFS_NAME_MAX = 30
 STAMP_RE = re.compile(r"[A-Za-z0-9._-]+$")
 
 # Column order; a toolchain not listed goes last, alphabetically.
-ORDER = ["gcc13", "gcc6", "gcc15", "gcc16", "vbcc"]
+ORDER = ["gcc13", "gcc6", "gcc15", "gcc16"]
 
 LEGEND = "_Green: the builds I use most._"
 
