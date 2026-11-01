@@ -326,6 +326,14 @@ void NormalCommands(struct DosPacket *action, globaldata *g)
 			break;
 #endif
 
+#if EXTENDED_PACKETS_EXAMINE64
+		case ACTION_EXAMINE_OBJECT64:
+		case ACTION_EXAMINE_NEXT64:
+		case ACTION_EXAMINE_FH64:
+			action->dp_Res1 = dd_Examine64(action, g);
+			break;
+#endif
+
 #if EXTENDED_PACKETS_MORPHOS
 		/*
 		 * Note: If we ever support file sizes between 2^31 to 2^32-2 then SEEK64 needs
@@ -475,6 +483,15 @@ void InhibitedCommands(struct DosPacket *action, globaldata *g)
 			action->dp_Res2 = ERROR_NOT_A_DOS_DISK;
 			action->dp_Res1 = -1;
 			break;
+
+#if EXTENDED_PACKETS_EXAMINE64
+		case ACTION_EXAMINE_OBJECT64:
+		case ACTION_EXAMINE_NEXT64:
+		case ACTION_EXAMINE_FH64:
+			action->dp_Res2 = ERROR_NOT_A_DOS_DISK;
+			action->dp_Res1 = DOSFALSE;
+			break;
+#endif
 
 #if EXTENDED_PACKETS_MORPHOS
 		case ACTION_SEEK64:
