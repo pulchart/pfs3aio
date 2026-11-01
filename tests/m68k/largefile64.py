@@ -33,6 +33,10 @@ ACTION_CHANGE_FILE_POSITION64 = 8001
 ACTION_GET_FILE_POSITION64 = 8002
 ACTION_CHANGE_FILE_SIZE64 = 8003
 ACTION_GET_FILE_SIZE64 = 8004
+ACTION_EXAMINE_OBJECT64 = 26408
+ACTION_EXAMINE_NEXT64 = 26409
+ACTION_EXAMINE_FH64 = 26410
+FIB64 = 268
 OFFSET_BEGINNING, OFFSET_CURRENT, OFFSET_END = -1, 0, 1
 DP64_INIT = 0xFFFFFFFD
 DOSTRUE = (1 << 64) - 1
@@ -100,6 +104,55 @@ class Packets:
     def setsize(self, fh, size, mode=OFFSET_BEGINNING):
         # allocating gigabytes of blocks takes the handler millions of cycles
         return self.call(fh, ACTION_CHANGE_FILE_SIZE64, size, mode & 0xFFFFFFFF, iters=200000)
+
+
+class Examine64:
+    """ACTION_EXAMINE_OBJECT64, _NEXT64 and _FH64 with the block they carry."""
+
+    def __init__(self, bridge):
+        self.b = bridge
+        self.fib = bridge.vh.alloc.alloc_memory(FIB64, label="FIB64")
+
+    def send(self, ptype, obj):
+        b = self.b
+        with b._lock:
+            b.launcher.send_packet(b.state, ptype, [obj, self.fib.addr >> 2])
+            r = b._run_until_replies()
+            ok = bool(r) and r[-1][2] != 0
+            return self.read() if ok else None
+
+    def read(self):
+        mem, a = self.b.mem, self.fib.addr
+        n = mem.r8(a + 8)
+        name = bytes(mem.r8(a + 9 + i) for i in range(n)).decode("latin-1")
+        return {"name": name, "type": mem.r32(a + 4) - (1 << 32 if mem.r32(a + 4) >> 31 else 0),
+                "size": (mem.r32(a + 124) << 32) | mem.r32(a + 128), "blocks": mem.r32(a + 136),
+                "key": mem.r32(a)}
+
+    def path(self, name):
+        lock, _ = self.b.locate(0, name)
+        try:
+            return self.send(ACTION_EXAMINE_OBJECT64, lock)
+        finally:
+            self.b.free_lock(lock)
+
+    def handle(self, fh_addr):
+        fe = FileHandleStruct(self.b.mem, fh_addr).args.val
+        return self.send(ACTION_EXAMINE_FH64, fe)
+
+    def walk(self):
+        """name -> size of the root directory, in directory order."""
+        lock, _ = self.b.locate(0, "")
+        out = []
+        try:
+            r = self.send(ACTION_EXAMINE_OBJECT64, lock)
+            while r is not None:
+                r = self.send(ACTION_EXAMINE_NEXT64, lock)
+                if r is not None:
+                    out.append((r["name"], r["size"]))
+        finally:
+            self.b.free_lock(lock)
+        return out
 
 
 def make_image(path, size, driver, cpu):
@@ -221,6 +274,21 @@ def run(b, pk):
     check("directory lists all", names(b), sorted(list(small) + ["BIG"]))
     for n, d in small.items():
         check("read " + n, b.read_file("/" + n, len(d), 0), d)
+
+    ex = Examine64(b)
+    r = ex.path("BIG")
+    check("examine64 size", r and r["size"], big)
+    check("examine64 name and type", r and (r["name"], r["type"]), ("BIG", -3))
+    check("examine64 small file", (ex.path("A2") or {}).get("size"), 1300)
+    fh, _ = b.open_file("/BIG", os.O_RDONLY)
+    r = ex.handle(fh)
+    check("examinefh64 size", r and r["size"], big)
+    b.close_file(fh)
+    want = dict((n, len(d)) for n, d in small.items())
+    want["BIG"] = big
+    listing = ex.walk()
+    check("examine next64 names", sorted(n for n, _ in listing), sorted(want))
+    check("examine next64 sizes", dict(listing), want)
 
     fh, _ = b.open_file("/BIG", os.O_RDWR)
     check("size after reopen", pk.size(fh), (DP64_INIT, big, 0))
