@@ -101,6 +101,9 @@
 #ifndef DOS_DOSEXTENS_H
 #include <dos/dosextens.h>
 #endif
+#ifndef DOS_FILEHANDLER_H
+#include <dos/filehandler.h>
+#endif
 #ifndef DEVICES_TRACKDISK_H
 #include <devices/trackdisk.h>
 #endif
@@ -525,6 +528,7 @@ struct globaldata
 	struct timerequest *trequest;
 	struct timerequest *flushrequest;    /* independent writeback deadline        */
 	struct MsgPort  *notifyport;        /* the replies to notification msgs come here */
+	ULONG   notifymsgs;                 /* notification msgs not yet replied    */
 	struct MsgPort  *sleepport;         /* for update anode and unsleep packets */
 	struct DosPacket *action;           /* the current handled dospacket        */
 
@@ -651,6 +655,7 @@ struct globaldata
 	BOOL v37EXEC;
 	BOOL v39EXEC;
 #endif
+	struct DosEnvec envcopy;            /* padded copy of a short DosEnvec table */
 };
 
 typedef struct globaldata globaldata;

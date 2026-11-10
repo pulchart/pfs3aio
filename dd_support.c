@@ -30,6 +30,9 @@ static struct notifyobject *CheckNotify(ULONG parentanodenr, DSTR objectname,
 	struct notifyobject *no, BOOL checkparent, globaldata *);
 void PFSDoNotify(struct fileinfo *object, BOOL checkparent, globaldata *g);
 void PFSUpdateNotify(ULONG dirnode, DSTR filename, ULONG anodenr, globaldata *g);
+void HandleNotifyReplies(globaldata *g);
+void FreeNotifyObject(struct notifyobject *no, globaldata *g);
+void RemoveNotify(struct NotifyRequest *nr, struct MinList *extra, globaldata *g);
 
 /* AFS extensions */
 #if EXTRAPACKETS
@@ -197,11 +200,120 @@ static void NotifyUser (struct NotifyRequest *nr, globaldata *g)
 		msg->nm_NReq = nr;
 		PutMsg (nr->nr_stuff.nr_Msg.nr_Port, &msg->nm_ExecMessage);
 		nr->nr_MsgCount++;
+		g->notifymsgs++;
 	}
 	else if (nr->nr_Flags & NRF_SEND_SIGNAL)
 	{
 		Signal (nr->nr_stuff.nr_Signal.nr_Task, 1<<nr->nr_stuff.nr_Signal.nr_SignalNum);
 	}
+}
+
+/*
+ * Is nr still an active notify request on one of our volumes? Once it
+ * has been ended, its owner may already have freed it.
+ */
+static BOOL NotifyActive (struct NotifyRequest *nr, globaldata *g)
+{
+  struct volumedata *v;
+  struct notifyobject *no;
+
+	for (v = HeadOf(&g->volumes); v->next; v = v->next)
+		for (no = HeadOf(&v->notifylist); no->next; no = no->next)
+			if (no->req == nr)
+				return TRUE;
+	return FALSE;
+}
+
+/*
+ * Handle notification messages replied to g->notifyport. A reply to a
+ * request with a deferred notification (NRF_WAIT_REPLY) is resent at
+ * once; any other reply is freed. The request itself is only touched
+ * while it is still active.
+ */
+void HandleNotifyReplies (globaldata *g)
+{
+  struct NotifyMessage *nmsg;
+  struct NotifyRequest *nr;
+
+	while (g->notifyport && (nmsg = (struct NotifyMessage *)GetMsg (g->notifyport)))
+	{
+		nr = nmsg->nm_NReq;
+		if (NotifyActive (nr, g))
+		{
+			if (nr->nr_Flags & NRF_MAGIC)
+			{
+				nr->nr_Flags ^= NRF_MAGIC;
+				PutMsg (nr->nr_stuff.nr_Msg.nr_Port, &nmsg->nm_ExecMessage);
+				continue;
+			}
+			nr->nr_MsgCount--;
+		}
+		FreeMemP (nmsg, g);
+		g->notifymsgs--;
+	}
+}
+
+/*
+ * ACTION_REMOVE_NOTIFY. End nr on whichever volume holds it, inserted
+ * or not, or in 'extra' (used by Quit). Our messages still queued at
+ * the client's port are taken back, so EndNotify() finds none to
+ * return (as recommended by the Guru Book). Messages the client has
+ * already taken are still replied to g->notifyport later.
+ */
+void RemoveNotify (struct NotifyRequest *nr, struct MinList *extra, globaldata *g)
+{
+  struct volumedata *v;
+  struct notifyobject *no;
+  struct Node *node, *next;
+  struct MsgPort *port;
+
+	if (!nr)
+		return;
+
+	nr->nr_Flags &= ~NRF_MAGIC;
+	port = nr->nr_stuff.nr_Msg.nr_Port;
+	if ((nr->nr_Flags & NRF_SEND_MESSAGE) && port)
+	{
+		Forbid ();
+		for (node = port->mp_MsgList.lh_Head; (next = node->ln_Succ); node = next)
+		{
+			struct NotifyMessage *nmsg = (struct NotifyMessage *)node;
+
+			if (nmsg->nm_ExecMessage.mn_ReplyPort == g->notifyport &&
+				nmsg->nm_NReq == nr)
+			{
+				Remove (node);
+				nr->nr_MsgCount--;
+				FreeMemP (nmsg, g);
+				g->notifymsgs--;
+			}
+		}
+		Permit ();
+	}
+
+	for (v = HeadOf(&g->volumes); v->next; v = v->next)
+		for (no = HeadOf(&v->notifylist); no->next; no = no->next)
+			if (no->req == nr)
+			{
+				FreeNotifyObject (no, g);
+				return;
+			}
+
+	if (extra)
+		for (no = HeadOf(extra); no->next; no = no->next)
+			if (no->req == nr)
+			{
+				FreeNotifyObject (no, g);
+				return;
+			}
+}
+
+void FreeNotifyObject (struct notifyobject *no, globaldata *g)
+{
+	MinRemove (no);
+	FreeMemP (no->namemem, g);
+	FreeMemP (no->objectname, g);
+	FreeMemP (no, g);
 }
 
 /*

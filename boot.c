@@ -165,6 +165,8 @@ BOOL debug=FALSE;
 void SAVEDS EntryPoint(void);
 void NormalCommands(struct DosPacket *, globaldata *);
 void HandleSleepMsg (globaldata *g);
+void HandleNotifyReplies(globaldata *g);
+void RemoveNotify(struct NotifyRequest *nr, struct MinList *extra, globaldata *g);
 void ReturnPacket(struct DosPacket *, struct MsgPort *, globaldata *);
 static void Quit(globaldata *);
 
@@ -280,6 +282,38 @@ static UBYTE debugbuf[120];
 /*                                MAIN                                */
 /**********************************************************************/
 
+/* These two also run without globaldata, so they use their own SysBase */
+#undef SysBase
+
+void ReturnPacket (struct DosPacket *packet, struct MsgPort *sender, globaldata *g)
+{
+  struct ExecBase *SysBase = *((struct ExecBase **)4);
+  struct MsgPort *rec = packet->dp_Port;
+
+	packet->dp_Link->mn_Node.ln_Name = (UBYTE*)packet;
+	packet->dp_Link->mn_Node.ln_Succ = NULL;
+	packet->dp_Link->mn_Node.ln_Pred = NULL;
+	packet->dp_Port = sender;
+	PutMsg (rec, packet->dp_Link);
+}
+
+/* Fail the startup packet, DOS would wait forever for a reply */
+static void FailStartup (struct MsgPort *msgport, LONG error)
+{
+  struct ExecBase *SysBase = *((struct ExecBase **)4);
+  struct DosPacket *pkt;
+  struct DeviceNode *devnode;
+
+	WaitPort (msgport);
+	pkt = (struct DosPacket *)GetMsg (msgport)->mn_Node.ln_Name;
+	devnode = (struct DeviceNode *)BADDR(pkt->dp_Arg3);
+	if (devnode)
+		devnode->dn_Task = NULL;
+	RES1(pkt) = DOSFALSE;
+	RES2(pkt) = error;
+	ReturnPacket (pkt, msgport, NULL);
+}
+
 void SAVEDS EntryPoint (void)
 {
 	/* globals */
@@ -299,10 +333,12 @@ void SAVEDS EntryPoint (void)
 
 	/* init globaldata */
 	g = AllocMem(sizeof(struct globaldata), MEMF_CLEAR);
+	msgport = &((struct Process *)FindTask (NULL))->pr_MsgPort;
 	if (!g)
 	{
+		FailStartup (msgport, ERROR_NO_FREE_STORE);
 		Alert (AG_NoMemory);
-		Wait (0);
+		return;
 	}
 	g->g_SysBase = SysBase;
 	g->largeDiskSafeOS = SysBase->LibNode.lib_Version >= OS_VERSION_SAFE_LARGE_DISK;
@@ -318,7 +354,6 @@ void SAVEDS EntryPoint (void)
 	if (g->v37DOS && g->v37EXEC)
 #endif
 	UtilityBase = OpenLibrary ("utility.library",0L);
-	msgport = &((struct Process *)FindTask (NULL))->pr_MsgPort;
 
 	if (!IntuitionBase ||
 #ifndef KSWRAPPER
@@ -326,8 +361,10 @@ void SAVEDS EntryPoint (void)
 #endif
 		!DOSBase)
 	{
-		NormalErrorMsg (AFS_ERROR_LIBRARY_PROBLEM, NULL, 1);
-		Wait (0);
+		if (IntuitionBase)
+			NormalErrorMsg (AFS_ERROR_LIBRARY_PROBLEM, NULL, 1);
+		FailStartup (msgport, ERROR_INVALID_RESIDENT_LIBRARY);
+		goto closelibs;
 	}
 
 	//DebugMsg("Requester debug enabled");
@@ -480,25 +517,7 @@ void SAVEDS EntryPoint (void)
 		}
 
 		if (signal & notifysig)
-		{
-		  struct NotifyMessage *nmsg;
-		  struct NotifyRequest *nr;
-
-			while ((nmsg = (struct NotifyMessage *)GetMsg (g->notifyport)))
-			{
-				nr = nmsg->nm_NReq;
-				if (nr->nr_Flags & NRF_MAGIC)
-				{
-					nr->nr_Flags ^= NRF_MAGIC;
-					PutMsg (nr->nr_stuff.nr_Msg.nr_Port, &nmsg->nm_ExecMessage);
-				}
-				else
-				{
-					nmsg->nm_NReq->nr_MsgCount--;
-					FreeMemP (nmsg, g);
-				}
-			}
-		}
+			HandleNotifyReplies(g);
 
 #if EXTRAPACKETS
 		if (signal & sleepsig)
@@ -541,23 +560,15 @@ terminate:
 	if (muBase)
 		CloseLibrary((struct Library *) muBase);
 #endif
+closelibs:
 	if (UtilityBase)
 		CloseLibrary(UtilityBase);
-	CloseLibrary((struct Library *) DOSBase);
-	CloseLibrary((struct Library *) IntuitionBase);
+	if (DOSBase)
+		CloseLibrary((struct Library *) DOSBase);
+	if (IntuitionBase)
+		CloseLibrary((struct Library *) IntuitionBase);
 
 	FreeMem(g, sizeof(struct globaldata));
-}
-
-void ReturnPacket (struct DosPacket *packet, struct MsgPort *sender, globaldata *g)
-{
-  struct MsgPort *rec = packet->dp_Port;
-
-	packet->dp_Link->mn_Node.ln_Name = (UBYTE*)packet;
-	packet->dp_Link->mn_Node.ln_Succ = NULL;
-	packet->dp_Link->mn_Node.ln_Pred = NULL;
-	packet->dp_Port = sender;
-	PutMsg (rec, packet->dp_Link);
 }
 
 static void SetTimer (int micros, globaldata *g)
@@ -682,11 +693,49 @@ static BOOL FindInLibraryList (CONST_STRPTR name, globaldata *g)
 
 /* ACTION_DIE */
 
+/* Answer a packet that arrives after all volumes have been removed.
+ * Only returning locks, file handles and notify requests can succeed.
+ */
+static void QuitPacket (struct Message *msg, struct MinList *notifies, globaldata *g)
+{
+  listentry_t *listentry;
+
+	g->action = (struct DosPacket *)msg->mn_Node.ln_Name;
+	g->action->dp_Res1 = DOSTRUE;
+	g->action->dp_Res2 = 0;
+
+	switch (g->action->dp_Type)
+	{
+		case ACTION_FREE_LOCK:
+			listentry = ListEntryFromLock (g->action->dp_Arg1);
+			if (listentry)
+				RemoveListEntry (listentry, g);
+			break;
+
+		case ACTION_END:
+			listentry = (listentry_t *)g->action->dp_Arg1;
+			if (listentry)
+				RemoveListEntry (listentry, g);
+			break;
+
+		case ACTION_REMOVE_NOTIFY:
+			RemoveNotify ((struct NotifyRequest *)g->action->dp_Arg1, notifies, g);
+			break;
+
+		default:
+			g->action->dp_Res1 = DOSFALSE;
+			g->action->dp_Res2 = ERROR_DEVICE_NOT_MOUNTED;
+			break;
+	}
+
+	ReturnPacket (g->action, g->msgport, g);
+}
+
 static void Quit (globaldata *g)
 {
-  struct volumedata *volume = NULL;
-  struct NotifyMessage *nmsg;
-  struct NotifyRequest *nr;
+  struct MinList notifies;
+  struct notifyobject *no, *next;
+  struct volumedata *v;
   struct Message *msg;
 #if UNSAFEQUIT
 	BOOL waited = FALSE;
@@ -694,6 +743,8 @@ static void Quit (globaldata *g)
 
 	// DebugMsg("ACTION_DIE");
 	ENTER("dd_Quit");
+
+	NewList ((struct List *)&notifies);
 
 	if (g->dieing)
 		UpdateDisk (g);
@@ -705,15 +756,26 @@ static void Quit (globaldata *g)
 
 	if (g->dieing)
 	{
+		/* Clients keep their NotifyRequests, with nr_Handler pointing
+		 * at g->msgport, after the volume is gone, and later call
+		 * EndNotify(). Take the notify objects of all volumes over, so
+		 * they survive the volume removal below and can be matched
+		 * against ACTION_REMOVE_NOTIFY until every one has been ended.
+		 */
+		for (v = HeadOf(&g->volumes); v->next; v = v->next)
+		{
+			for (no = HeadOf(&v->notifylist); (next = no->next); no = next)
+			{
+				MinRemove (no);
+				MinAddHead (&notifies, no);
+			}
+		}
+
 		for (;;) {
-			struct volumedata *v = g->currentvolume;
-			if (v) {
+			if (g->currentvolume) {
 				/* 'remove' disk */
-				if (SafeDiskRemoveSequence(g)) {
-					volume = v;
-				} else {
+				if (!SafeDiskRemoveSequence(g))
 					Delay(5);
-				}
 			}
 #if UNSAFEQUIT
 			/* wait for wb to return locks */
@@ -725,31 +787,26 @@ static void Quit (globaldata *g)
 			/* check if packets queued */
 			while (g->msgport && (msg = GetMsg(g->msgport)))
 			{
-				g->action = (struct DosPacket *)msg->mn_Node.ln_Name;
-				g->action->dp_Res1 = DOSFALSE;
-				g->action->dp_Res2 = ERROR_DEVICE_NOT_MOUNTED;
-				ReturnPacket (g->action, g->msgport, g);
+				if (g->currentvolume)
+				{
+					g->action = (struct DosPacket *)msg->mn_Node.ln_Name;
+					g->action->dp_Res1 = DOSFALSE;
+					g->action->dp_Res2 = ERROR_DEVICE_NOT_MOUNTED;
+					ReturnPacket (g->action, g->msgport, g);
+				}
+				else
+				{
+					/* don't drop returned locks and notify requests */
+					QuitPacket (msg, &notifies, g);
+				}
 			}
 			if (!g->currentvolume)
 				break;
 		}
 	}
 
-	/* check if notifypackets queued */
-	while (g->notifyport && (nmsg = (struct NotifyMessage *)GetMsg (g->notifyport)))
-	{
-		nr = nmsg->nm_NReq;
-		if (nr->nr_Flags & NRF_MAGIC)
-		{
-			nr->nr_Flags ^= NRF_MAGIC;
-			PutMsg (nr->nr_stuff.nr_Msg.nr_Port, &nmsg->nm_ExecMessage);
-		}
-		else
-		{
-			nmsg->nm_NReq->nr_MsgCount--;
-			FreeMemP (nmsg, g);
-		}
-	}
+	/* check if notify replies queued */
+	HandleNotifyReplies (g);
 
 	Forbid ();
 
@@ -774,8 +831,6 @@ static void Quit (globaldata *g)
 	if (g->port)
 		DeleteMsgPort(g->port);
 
-	if (g->notifyport)
-		DeleteMsgPort(g->notifyport);
 #if EXTRAPACKETS
 	if (g->sleepport)
 		DeleteMsgPort(g->sleepport);
@@ -790,40 +845,33 @@ static void Quit (globaldata *g)
 
 	Permit ();
 
-#if UNSAFEQUIT
-	/* wait 'till all locks freed */
-	while (volume && !IsMinListEmpty(&volume->fileentries))
+	if (g->dieing)
 	{
-		listentry_t *listentry;
+		ULONG waitmask = (1 << g->msgport->mp_SigBit) | (1 << g->notifyport->mp_SigBit);
 
-		msg = GetMsg (g->msgport);
-		if (!msg) {
-			Wait (1 << g->msgport->mp_SigBit);
-		}
-		g->action = (struct DosPacket *)msg->mn_Node.ln_Name;
-		if (g->action->dp_Type == ACTION_FREE_LOCK)
+		/* Stay alive until everything that still references this
+		 * handler has been returned: the locks and file handles of
+		 * every volume still in g->volumes (a removed volume is only
+		 * kept there while it has locks), every notify request
+		 * (nr_Handler) and every notify message not yet replied
+		 * (mn_ReplyPort == g->notifyport).
+		 */
+		for (;;)
 		{
-			listentry = ListEntryFromLock (g->action->dp_Arg1);
-			if (listentry)
-				RemoveListEntry (listentry, g);
-			g->action->dp_Res1 = DOSTRUE;
-		}
-		else if (g->action->dp_Type == ACTION_END)
-		{
-			listentry = (listentry_t *)g->action->dp_Arg1;
-			if (listentry)
-				RemoveListEntry (listentry, g);
-			g->action->dp_Res1 = DOSTRUE;
-		}
-		else
-		{
-			g->action->dp_Res1 = DOSFALSE;
-			g->action->dp_Res2 = ERROR_DEVICE_NOT_MOUNTED;
-		}
+			HandleNotifyReplies (g);
+			if (IsMinListEmpty(&g->volumes) && IsMinListEmpty(&notifies) &&
+				!g->notifymsgs)
+				break;
 
-		ReturnPacket (g->action, g->msgport, g);
+			if ((msg = GetMsg (g->msgport)))
+				QuitPacket (msg, &notifies, g);
+			else
+				Wait (waitmask);
+		}
 	}
-#endif
+
+	if (g->notifyport)
+		DeleteMsgPort(g->notifyport);
 
 	if (g->bufferPool)
 		LibDeletePool (g->bufferPool);
