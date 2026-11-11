@@ -17,6 +17,7 @@ from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.dirname(HERE))
 
 import largefile64 as L  # noqa: E402
 
@@ -31,6 +32,17 @@ def make_link(b, root, name, to):
         r = b._run_until_replies()
     b.free_lock(target)
     return bool(r) and r[-1][2] != 0
+
+
+def select_cpu(cpu):
+    """amifuse emulates a 68020 only; point the formatter and the bridge at cpu."""
+    import amifuse.vamos_runner as vr
+    import vamos_cpu
+
+    os.environ["FI_CPU"] = cpu
+    want, setup = cpu, vr.VamosHandlerRuntime.setup
+    vr.VamosHandlerRuntime.setup = lambda self, cpu=None: setup(self, cpu=want)
+    vamos_cpu.patch_attn_flags()
 
 
 def run(b):
@@ -72,11 +84,11 @@ def main():
 
     if not os.path.isfile(a.driver):
         sys.exit("no driver: " + a.driver)
-    tmp = tempfile.mkdtemp(prefix="hardlink.", dir=os.path.join(L.TESTS, ".tmp")
-                           if os.path.isdir(os.path.join(L.TESTS, ".tmp")) else None)
+    tmp = tempfile.mkdtemp(prefix="hardlink.", dir=L.scratch_dir())
     image = os.path.join(tmp, "link.hdf")
-    L.make_image(image, a.size, a.driver, a.cpu)
-    b = L.open_bridge(Path(image), Path(a.driver), a.cpu, a.debug)
+    select_cpu(a.cpu)
+    L.make_image(image, a.size, a.driver, 512)
+    b = L.open_bridge(Path(image), Path(a.driver), a.debug)
     try:
         run(b)
     finally:
