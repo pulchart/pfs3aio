@@ -16,39 +16,37 @@ The handler arms a five second writeback deadline on `timer.device`. The emulato
 
 Toolchains: gcc 6.5.0b, 13.4.0b and 16.2.0b, all from `docker.io/stefanreinauer/amiga-gcc`.
 
-The tables use the `000` build and the `060` build of each toolchain. The rest are under "Which build for which machine".
+The tables use the `000` build (68000+) and the `020` build (68020+) of each toolchain; gcc 6.5 has no `020` build. The rest are under "Which build for which machine".
 
 ## Format and write
 
-Kilocycles. The two right-aligned columns are speed relative to row 3, the baseline for all three tables; 0.50x means twice the cycles.
+Kilocycles. The two right-aligned columns are speed relative to row 8, gcc 16.2 with the `020` build on a 68020, the baseline for all three tables; 0.50x means twice the cycles.
 
 | # | compiler | CPU | build | 512 fmt | 512 wr | 4K fmt | 4K wr | wr speed 512 | wr speed 4K |
 |---|---|---|---|---|---|---|---|---:|---:|
-| 1 | gcc 6.5 | 68000 | 000 | 585 | 1819 | 639 | 851 | _0.37x_ | _0.45x_ |
-| 2 | gcc 6.5 | 68020 | 000 | 273 | 859 | 308 | 406 | _0.78x_ | _0.94x_ |
-| 3 | gcc 6.5 (baseline) | 68020 | 060 | 272 | 672 | 303 | 383 | _1.00x_ | _1.00x_ |
-| 4 | gcc 13.4 | 68000 | 000 | 615 | 1888 | 672 | 946 | _0.36x_ | _0.40x_ |
-| 5 | gcc 13.4 | 68020 | 000 | 295 | 894 | 323 | 441 | _0.75x_ | _0.87x_ |
-| 6 | gcc 13.4 | 68020 | 060 | 286 | 746 | 314 | 417 | _0.90x_ | _0.92x_ |
-| 7 | gcc 16.2 | 68000 | 000 | 608 | 1877 | 652 | 885 | _0.36x_ | _0.43x_ |
-| 8 | gcc 16.2 | 68020 | 000 | 295 | 892 | 321 | 417 | _0.75x_ | _0.92x_ |
-| 9 | gcc 16.2 | 68020 | 060 | 282 | 726 | 308 | 392 | _0.93x_ | _0.98x_ |
+| 1 | gcc 6.5 | 68000 | 000 | 576 | 1190 | 625 | 779 | _0.46x_ | _0.49x_ |
+| 2 | gcc 6.5 | 68020 | 000 | 272 | 529 | 304 | 371 | _1.03x_ | _1.02x_ |
+| 3 | gcc 13.4 | 68000 | 000 | 611 | 1224 | 664 | 827 | _0.45x_ | _0.46x_ |
+| 4 | gcc 13.4 | 68020 | 000 | 296 | 566 | 321 | 394 | _0.96x_ | _0.96x_ |
+| 5 | gcc 13.4 | 68020 | 020 | 283 | 552 | 309 | 391 | _0.99x_ | _0.97x_ |
+| 6 | gcc 16.2 | 68000 | 000 | 602 | 1214 | 641 | 812 | _0.45x_ | _0.47x_ |
+| 7 | gcc 16.2 | 68020 | 000 | 294 | 560 | 316 | 386 | _0.97x_ | _0.98x_ |
+| 8 | gcc 16.2 (baseline) | 68020 | 020 | 284 | 546 | 307 | 378 | _1.00x_ | _1.00x_ |
 
 ## Read and list
 
-Kilocycles, same rows and baseline. Row 3 is the cheapest write and format; a few other rows list or read for less.
+Kilocycles, same rows and baseline. Row 8 lists a directory and creates a file for the fewest cycles; row 2, gcc 6.5 with the `000` build, formats, writes and reads for fewer.
 
 | # | compiler | CPU | build | 512 rd | 512 ls | 4K rd | 4K ls | ls speed 512 | ls speed 4K |
 |---|---|---|---|---|---|---|---|---:|---:|
-| 1 | gcc 6.5 | 68000 | 000 | 352 | 655 | 417 | 732 | _0.44x_ | _0.46x_ |
-| 2 | gcc 6.5 | 68020 | 000 | 162 | 284 | 194 | 323 | _1.01x_ | _1.04x_ |
-| 3 | gcc 6.5 (baseline) | 68020 | 060 | 159 | 287 | 203 | 337 | _1.00x_ | _1.00x_ |
-| 4 | gcc 13.4 | 68000 | 000 | 379 | 732 | 500 | 865 | _0.39x_ | _0.39x_ |
-| 5 | gcc 13.4 | 68020 | 000 | 170 | 289 | 223 | 348 | _0.99x_ | _0.97x_ |
-| 6 | gcc 13.4 | 68020 | 060 | 192 | 286 | 234 | 335 | _1.00x_ | _1.01x_ |
-| 7 | gcc 16.2 | 68000 | 000 | 372 | 675 | 450 | 763 | _0.43x_ | _0.44x_ |
-| 8 | gcc 16.2 | 68020 | 000 | 174 | 285 | 208 | 325 | _1.01x_ | _1.04x_ |
-| 9 | gcc 16.2 | 68020 | 060 | 175 | 288 | 209 | 327 | _1.00x_ | _1.03x_ |
+| 1 | gcc 6.5 | 68000 | 000 | 370 | 647 | 428 | 711 | _0.47x_ | _0.48x_ |
+| 2 | gcc 6.5 | 68020 | 000 | 171 | 308 | 203 | 343 | _0.98x_ | _0.99x_ |
+| 3 | gcc 13.4 | 68000 | 000 | 397 | 686 | 470 | 765 | _0.44x_ | _0.45x_ |
+| 4 | gcc 13.4 | 68020 | 000 | 187 | 320 | 227 | 363 | _0.95x_ | _0.94x_ |
+| 5 | gcc 13.4 | 68020 | 020 | 199 | 308 | 237 | 349 | _0.98x_ | _0.98x_ |
+| 6 | gcc 16.2 | 68000 | 000 | 399 | 675 | 473 | 749 | _0.45x_ | _0.46x_ |
+| 7 | gcc 16.2 | 68020 | 000 | 187 | 318 | 221 | 356 | _0.95x_ | _0.96x_ |
+| 8 | gcc 16.2 (baseline) | 68020 | 020 | 198 | 303 | 232 | 341 | _1.00x_ | _1.00x_ |
 
 ## Create a file
 
@@ -56,15 +54,14 @@ Kilocycles, one more file written into the directory the previous table lists. S
 
 | # | compiler | CPU | build | 512 create | 4K create | create speed 512 | create speed 4K |
 |---|---|---|---|---|---|---:|---:|
-| 1 | gcc 6.5 | 68000 | 000 | 388 | 579 | _0.47x_ | _0.50x_ |
-| 2 | gcc 6.5 | 68020 | 000 | 187 | 284 | _0.97x_ | _1.01x_ |
-| 3 | gcc 6.5 (baseline) | 68020 | 060 | 181 | 288 | _1.00x_ | _1.00x_ |
-| 4 | gcc 13.4 | 68000 | 000 | 406 | 662 | _0.45x_ | _0.44x_ |
-| 5 | gcc 13.4 | 68020 | 000 | 192 | 312 | _0.94x_ | _0.92x_ |
-| 6 | gcc 13.4 | 68020 | 060 | 189 | 295 | _0.96x_ | _0.98x_ |
-| 7 | gcc 16.2 | 68000 | 000 | 391 | 592 | _0.46x_ | _0.49x_ |
-| 8 | gcc 16.2 | 68020 | 000 | 186 | 283 | _0.97x_ | _1.02x_ |
-| 9 | gcc 16.2 | 68020 | 060 | 181 | 277 | _1.00x_ | _1.04x_ |
+| 1 | gcc 6.5 | 68000 | 000 | 406 | 585 | _0.48x_ | _0.49x_ |
+| 2 | gcc 6.5 | 68020 | 000 | 197 | 290 | _0.98x_ | _0.99x_ |
+| 3 | gcc 13.4 | 68000 | 000 | 423 | 626 | _0.46x_ | _0.46x_ |
+| 4 | gcc 13.4 | 68020 | 000 | 202 | 306 | _0.96x_ | _0.94x_ |
+| 5 | gcc 13.4 | 68020 | 020 | 194 | 293 | _1.00x_ | _0.98x_ |
+| 6 | gcc 16.2 | 68000 | 000 | 416 | 604 | _0.47x_ | _0.48x_ |
+| 7 | gcc 16.2 | 68020 | 000 | 199 | 294 | _0.97x_ | _0.98x_ |
+| 8 | gcc 16.2 (baseline) | 68020 | 020 | 194 | 287 | _1.00x_ | _1.00x_ |
 
 ## Which build for which machine
 
@@ -90,21 +87,21 @@ gcc 16.2 on an emulated 68020, kilocycles. 512 byte PFS3 blocks:
 
 | build | flag | fmt | wr | rd | ls | create |
 |---|---|---|---|---|---|---|
-| `000` | `-m68000` | 295 | 892 | 174 | 285 | 186 |
-| `020` | `-m68020-60` | 281 | 718 | 174 | 285 | 180 |
-| `030` | `-m68030` | 279 | 716 | 171 | 287 | 176 |
-| `040` | `-m68020-40` | 278 | 709 | 170 | 284 | 176 |
-| `060` | `-m68060` | 282 | 726 | 175 | 288 | 181 |
+| `000` | `-m68000` | 294 | 560 | 187 | 318 | 199 |
+| `020` | `-m68020-60` | 284 | 546 | 198 | 303 | 194 |
+| `030` | `-m68030` | 283 | 538 | 187 | 306 | 190 |
+| `040` | `-m68020-40` | 281 | 537 | 186 | 303 | 189 |
+| `060` | `-m68060` | 286 | 547 | 199 | 306 | 195 |
 
 4096 byte PFS3 blocks:
 
 | build | flag | fmt | wr | rd | ls | create |
 |---|---|---|---|---|---|---|
-| `000` | `-m68000` | 321 | 417 | 208 | 325 | 283 |
-| `020` | `-m68020-60` | 307 | 390 | 209 | 325 | 276 |
-| `030` | `-m68030` | 305 | 383 | 205 | 327 | 272 |
-| `040` | `-m68020-40` | 304 | 381 | 204 | 324 | 271 |
-| `060` | `-m68060` | 308 | 392 | 209 | 327 | 277 |
+| `000` | `-m68000` | 316 | 386 | 221 | 356 | 294 |
+| `020` | `-m68020-60` | 307 | 378 | 232 | 341 | 287 |
+| `030` | `-m68030` | 305 | 371 | 221 | 343 | 284 |
+| `040` | `-m68020-40` | 304 | 369 | 220 | 340 | 283 |
+| `060` | `-m68060` | 308 | 379 | 233 | 344 | 288 |
 
 The emulator charges a 68020, 68030 and 68040 alike for every instruction these builds contain, so the table compares instruction selection, not pipelines; an emulated 68040 gives the same numbers, checked. There is no 68060 core.
 
@@ -128,11 +125,12 @@ Bytes.
 
 | toolchain | 000 | 020 | 030 | 040 | 060 |
 |---|---|---|---|---|---|
-| gcc 6.5 | 66408 | - | 65036 | 65444 | 65060 |
-| gcc 13.4 | 66104 | 64152 | 64096 | 64300 | 64152 |
-| gcc 16.2 | 66544 | 64592 | 64772 | 64944 | 64592 |
+| gcc 6.5 | 79060 | - | 77616 | 78092 | 77644 |
+| gcc 13.4 | 77524 | 75148 | 75196 | 75412 | 75148 |
+| gcc 16.2 | 78144 | 75996 | 76204 | 76392 | 75996 |
 
 ## Observation
 
-- **The 060 build against the 000 build, both on a 68020.** Helps the write. Format and file creation gain little, and for the gcc builds so does the directory listing; their reads are often slower.
-- **The CPU matters more than the build.** Moving the same 000 build from a 68000 to a 68020 roughly halves the write. Switching that 68020 to the 060 build gains far less.
+- **The 020 build against the 000 build, both on a 68020.** Changes little: format, write, listing and file creation get 1 to 5 percent cheaper, the read 4 to 7 percent more expensive.
+- **The CPU matters more than the build.** Moving the same 000 build from a 68000 to a 68020 roughly halves every operation. Switching that 68020 to the 020 build gains far less.
+- **gcc 6.5 is the cheapest with the same build.** With the `000` build it needs the fewest cycles for every operation; gcc 13.4 and 16.2 need up to 8 percent more for the listing and up to 12 percent more for the read. gcc 16.2 with its `020` build lists a directory for less than gcc 6.5 with `000`.

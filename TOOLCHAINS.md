@@ -36,7 +36,7 @@ Several gcc versions from one image family:
 
 | | version | tag on `docker.io/stefanreinauer/amiga-gcc` | needs |
 |---|---|---|---|
-| gcc6 | 6.5.0b | `gcc-v6.5.0b-20251218` | pinned, see below |
+| gcc6 | 6.5.0b | `gcc-v6.5.0b-20261103` | pinned, see below |
 | gcc13 | 13.4.0b | `gcc-v13.4` | nothing |
 | gcc16 | 16.2.0b | `gcc-v16.2` | `-std=gnu17` |
 
@@ -46,7 +46,7 @@ They all install into `/opt/amiga`, which the auto-detection in `makefile` finds
 
 **gcc 16 needs `-std=gnu17`.** It defaults to C23, where `struct.h:306`'s `typedef enum {false, true} bool;` is a syntax error. gcc 6.5 does not know the option at all. gcc 13.4 accepts it but does not need it, and leaving it off keeps its output byte-identical to what the previously used locally built image produced.
 
-**gcc 6.5 is pinned to a dated tag**, not the floating `gcc-v6.5.0b`, because that tag now carries a build that miscompiles `intlcmp`. See "Issue 3" below. `gcc-v6.5.0b-20251218` carries bebbo build `251015095727` and produces binaries byte-identical to a host `~/opt/m68k-amigaos` install of the same build, so the pin changed nothing that ships. `gcc-v6.5.0b-20260629`, build `260602123145`, is also clean but 88 bytes smaller on the 000 tier and 84 on the 020, so it is not a drop-in replacement for the pinned one.
+**gcc 6.5 is pinned to a dated tag**, not the floating `gcc-v6.5.0b`, because a floating build once miscompiled `intlcmp`. See "Issue 3" below. `gcc-v6.5.0b-20261103` carries bebbo build `20260819091705`, which does not have that bug.
 
 ## Results
 
@@ -369,9 +369,9 @@ gcc 13.4 and 16.2 miscompile it: `CreateLink` reuses the `link` value it stored 
 
 Both functions go through a union of the struct and a `UWORD` array now. Every build also passes `-fno-strict-aliasing`, so other accesses of that kind cannot go wrong.
 
-## Issue 3: intlcmp post-increment miscompilation (avoided by pinning)
+## Issue 3: intlcmp post-increment miscompilation (fixed in a later build)
 
-Affects bebbo build `20260731` of gcc 6.5.0b, which is what the floating `docker.io/stefanreinauer/amiga-gcc:gcc-v6.5.0b` tag carries. Avoided by pinning `GCC6_TAG` to `gcc-v6.5.0b-20251218`. Not present in build `251015095727` (that tag, and a host install of the same build) or in `260602123145` (`gcc-v6.5.0b-20260629`), so it landed between June and July 2026.
+Affects bebbo build `20260731` of gcc 6.5.0b, which the floating `docker.io/stefanreinauer/amiga-gcc:gcc-v6.5.0b` tag carried for a while. Not present in build `251015095727` (`gcc-v6.5.0b-20251218`, the pin until then), in `260602123145` (`gcc-v6.5.0b-20260629`) or in `20260819091705` (`gcc-v6.5.0b-20261103`, the pin now).
 
 `intlcmp` in `assroutines.c` starts by consuming one length byte from each side:
 

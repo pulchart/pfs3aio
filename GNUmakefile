@@ -21,12 +21,12 @@ space := $(empty) $(empty)
 # toolchain. They all install into /opt/amiga, which the auto-detection in
 # makefile.gcc finds, so none of them needs AMIGA_PREFIX.
 GCC_IMAGE ?= docker.io/stefanreinauer/amiga-gcc
-GCC6_TAG ?= gcc-v6.5.0b-20251218
+GCC6_TAG ?= gcc-v6.5.0b-20261103
 GCC13_TAG ?= gcc-v13.4
 GCC16_TAG ?= gcc-v16.2
 
-# gcc 6.5 takes a dated tag, not the floating one: that now carries a build
-# which miscompiles intlcmp at 68020+. See TOOLCHAINS.md, "Issue 3".
+# gcc 6.5 takes a dated tag, not the floating one: a floating build once
+# miscompiled intlcmp at 68020+. See TOOLCHAINS.md, "Issue 3".
 
 # gcc 16 defaults to C23, where struct.h:306 "typedef enum {false, true}
 # bool;" is a syntax error. gcc 6.5 does not know -std=gnu17 at all; 13.4

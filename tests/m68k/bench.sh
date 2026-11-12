@@ -26,7 +26,7 @@ VAMOS=${VAMOS:-vamos}
 # Same image family and pinned tags as GNUmakefile; see the note there on
 # why gcc 6.5 is pinned to a dated tag.
 GCC_IMAGE=${GCC_IMAGE:-docker.io/stefanreinauer/amiga-gcc}
-GCC6_TAG=${GCC6_TAG:-gcc-v6.5.0b-20251218}
+GCC6_TAG=${GCC6_TAG:-gcc-v6.5.0b-20261103}
 GCC13_TAG=${GCC13_TAG:-gcc-v13.4}
 GCC16_TAG=${GCC16_TAG:-gcc-v16.2}
 CPUS=${CPUS:-"68000 68020 68030 68040"}
