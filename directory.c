@@ -317,8 +317,9 @@ static BOOL MoveToPrevious(struct fileinfo de, struct direntry *to, struct filei
 static BOOL RenameWithinDir(struct fileinfo from, struct direntry *to, struct fileinfo *result, globaldata * g);
 static BOOL RenameAcrossDirs(struct fileinfo from, struct direntry *to, union objectinfo *destdir, struct fileinfo *result, globaldata * g);
 static void RemoveDirEntry(struct fileinfo info, globaldata * g);
+static BOOL CutDirEntry(struct fileinfo info, globaldata * g);
 static BOOL AddDirectoryEntry(union objectinfo *dir, struct direntry *newentry, struct fileinfo *newinfo, globaldata * g);
-static void UpdateChangedRef(struct fileinfo from, struct fileinfo *to, int diff, globaldata * g);
+static BOOL UpdateChangedRef(struct fileinfo from, struct fileinfo *to, int diff, globaldata * g);
 
 #if VERSION23
 static int AllocDeldirSlot(globaldata * g);
@@ -754,12 +755,14 @@ static LONG SearchInDir(ULONG dirnodenr, STRPTR objectname, union objectinfo *in
 	{
 		entry = (struct direntry *)(&dirblock->blk.entries);
 
-		/* scan block */
+		/* scan block; intlcmp only for names of the right length */
 		while (entry->next)
 		{
-			found = intlcmp(intl_name, DIRENTRYNAME(entry));
-			if (found)
+			if (entry->nlength == intl_name[0] && intlcmp(intl_name, DIRENTRYNAME(entry)))
+			{
+				found = TRUE;
 				break;
+			}
 			entry = NEXTENTRY(entry);
 		}
 
@@ -1076,6 +1079,28 @@ BOOL ExamineNextFile(lockentry_t *file, struct FileInfoBlock * fib, FSIZE *size6
 	return DOSTRUE;
 }
 
+/* GetDEFileSize from extra fields already read; they are read when largefile is set */
+static FSIZE EntryFileSize(struct direntry *direntry, struct extrafields *extrafields, globaldata *g)
+{
+#if LARGE_FILE_SIZE
+	if (g->largefile)
+		return ((FSIZE)direntry->fsize) | ((FSIZE)extrafields->fsizex << 32);
+#else
+	(void)extrafields;
+	(void)g;
+#endif
+	return direntry->fsize;
+}
+
+/* GetDEFileSize32 of a size */
+static ULONG FileSize32(FSIZE size)
+{
+#if LARGE_FILE_SIZE
+	if (size > MAXFILESIZE32)
+		return MAXFILESIZE32;
+#endif
+	return (ULONG)size;
+}
 
 /* Fill fileinfoblock of a file
  */
@@ -1106,14 +1131,16 @@ static BOOL FillFib(struct direntry *direntry, struct cdirblock *dirblock, struc
 	namelen = min(namelen, sizeof(fib->fib_FileName) - 2);
 	commentlen = min(commentlen, sizeof(fib->fib_Comment) - 2);
 	
-	size = GetDEFileSize(direntry, g);
+	if (g->dirextension)
+		GetExtraFields(direntry, &extrafields);
+	size = EntryFileSize(direntry, &extrafields, g);
 	if (size64)
 		*size64 = size;
 	/* fib->fib_DiskKey done by Examine(Next) */
 	fib->fib_DirEntryType = direntry->type;
 	fib->fib_EntryType = direntry->type;
 	fib->fib_Protection = (ULONG)direntry->protection;
-	fib->fib_Size = GetDEFileSize32(direntry, g);
+	fib->fib_Size = FileSize32(size);
 	fib->fib_NumBlocks = (size >> BLOCKSHIFT) + ((size & BLOCKSIZEMASK) != 0);
 	fib->fib_Date.ds_Days = direntry->creationday;
 	fib->fib_Date.ds_Minute = direntry->creationminute;
@@ -1127,7 +1154,6 @@ static BOOL FillFib(struct direntry *direntry, struct cdirblock *dirblock, struc
 
 	if (g->dirextension)
 	{
-		GetExtraFields(direntry, &extrafields);
 		fib->fib_Protection |= extrafields.prot;
 		fib->fib_OwnerUID = extrafields.uid;
 		fib->fib_OwnerGID = extrafields.gid;
@@ -1366,7 +1392,7 @@ static ULONG FillInData(struct ExAllData *buffer, LONG type, struct direntry *di
 				buffer->ed_Size64 = extrafields.virtualsize;
 			else
 #endif
-				buffer->ed_Size64 = GetDEFileSize(direntry, g);
+				buffer->ed_Size64 = EntryFileSize(direntry, &extrafields, g);
 #endif
 		case ED_OWNER:
 			buffer->ed_OwnerUID = extrafields.uid;
@@ -1391,7 +1417,7 @@ static ULONG FillInData(struct ExAllData *buffer, LONG type, struct direntry *di
 				buffer->ed_Size = extrafields.virtualsize;
 			else
 #endif
-				buffer->ed_Size = GetDEFileSize32(direntry, g);
+				buffer->ed_Size = FileSize32(EntryFileSize(direntry, &extrafields, g));
 
 		case ED_TYPE:
 			buffer->ed_Type = direntry->type;
@@ -3465,7 +3491,7 @@ ULONG SetRollover(fileentry_t *rollfile, struct rolloverinfo *roinfo, globaldata
  * in: from, to, destdir
  * out: result
  *
- * from can become INVALID..
+ * from can become INVALID.., from.dirblock can be freed
  */
 
 BOOL ChangeDirEntry(struct fileinfo from, struct direntry *to,
@@ -3490,6 +3516,7 @@ static BOOL RenameAcrossDirs(struct fileinfo from, struct direntry *to,
 		   union objectinfo *destdir, struct fileinfo *result, globaldata * g)
 {
 	UWORD removedlen;
+	BOOL empty;
 
 	/* may not be evicted while AddDirectoryEntry loads other blocks */
 	LOCK(from.dirblock);
@@ -3508,11 +3535,14 @@ static BOOL RenameAcrossDirs(struct fileinfo from, struct direntry *to,
 			return FALSE;
 	}
 
-	/* remove old entry */
+	/* remove old entry; free its block if that leaves it empty and
+	 * nothing points into it any more
+	 */
 	removedlen = from.direntry->next;
-	RemoveDirEntry(from, g);
-
-	UpdateChangedRef(from, result, -removedlen, g);
+	empty = CutDirEntry(from, g);
+	if (UpdateChangedRef(from, result, -removedlen, g) || !empty ||
+		FreeEmptyDBlk((struct cachedblock *)from.dirblock, g) <= 0)
+		MakeBlockDirty((struct cachedblock *)from.dirblock, g);
 	if (result)
 		LOCK(result->dirblock);
 	return TRUE;
@@ -3772,6 +3802,15 @@ static void RenameInPlace(struct fileinfo from, struct direntry *to, struct file
  */
 static void RemoveDirEntry(struct fileinfo info, globaldata * g)
 {
+	CutDirEntry(info, g);
+	MakeBlockDirty((struct cachedblock *)info.dirblock, g);     // %6.2
+}
+
+/* Removes the entry without marking its block dirty; TRUE if the block is
+ * empty now
+ */
+static BOOL CutDirEntry(struct fileinfo info, globaldata * g)
+{
 	UBYTE *endofblok, *startofblok, *destofblok, *startofclear;
 	UWORD clearlen;
 	SIPTR error;
@@ -3794,8 +3833,7 @@ static void RemoveDirEntry(struct fileinfo info, globaldata * g)
 	/* makes info invalid!! */
 	if (info.direntry->next)
 		memset(startofclear, 0, clearlen);
-	MakeBlockDirty((struct cachedblock *)info.dirblock, g);     // %6.2
-
+	return !FIRSTENTRY(info.dirblock)->next;
 }
 
 
@@ -3940,11 +3978,13 @@ static BOOL AddDirectoryEntry(union objectinfo *dir, struct direntry *newentry,
 /*
  * Update references
  * diff is direntry size difference (new - original)
+ * Returns TRUE if a reference still points into from.dirblock.
  */
-static void UpdateChangedRef(struct fileinfo from, struct fileinfo *to, int diff, globaldata * g)
+static BOOL UpdateChangedRef(struct fileinfo from, struct fileinfo *to, int diff, globaldata * g)
 {
 	struct volumedata *volume = from.dirblock->volume;
 	listentry_t *fe;
+	BOOL held = FALSE;
 
 	for (fe = HeadOf(&volume->fileentries); fe->next; fe = fe->next)
 	{
@@ -3994,8 +4034,13 @@ static void UpdateChangedRef(struct fileinfo from, struct fileinfo *to, int diff
 					}
 				}
 			}
+			if (dle->nextentry.dirblock == from.dirblock)
+				held = TRUE;
 		}
+		if (fe->info.file.dirblock == from.dirblock)
+			held = TRUE;
 	}
+	return held;
 }
 
 
@@ -4092,16 +4137,18 @@ struct cdirblock *LoadDirBlock(ULONG blocknr, globaldata * g)
 			if (dirblk->blk.id == DBLKID)
 			{
 				struct direntry *entry = FIRSTENTRY(dirblk);
-				ULONG offset = 0;
+				ULONG offset = 0, space = DB_ENTRYSPACE;
+				UBYTE next;
 
-				while (entry->next)
+				while ((next = entry->next))
 				{
 					ULONG commentoffset;
+					UBYTE commentlen;
 
-					if ((entry->next & 1) != 0 ||
-						entry->next < sizeof(struct direntry) ||
-						entry->next > MAX_ENTRYSIZE ||
-						offset + entry->next + 1 > DB_ENTRYSPACE)
+					if ((next & 1) != 0 ||
+						next < sizeof(struct direntry) ||
+						next > MAX_ENTRYSIZE ||
+						offset + next + 1 > space)
 					{
 						FreeLRU((struct cachedblock *)dirblk);
 						return NULL;
@@ -4113,15 +4160,15 @@ struct cdirblock *LoadDirBlock(ULONG blocknr, globaldata * g)
 					 * limit: existing names may predate a limit change.
 					 */
 					commentoffset = offsetof(struct direntry, startofname) + entry->nlength;
-					if (entry->nlength >= FNSIZE || commentoffset >= entry->next ||
-						*COMMENT(entry) >= CMSIZE ||
-						commentoffset + 1 + *COMMENT(entry) > entry->next)
+					if (entry->nlength >= FNSIZE || commentoffset >= next ||
+						(commentlen = *COMMENT(entry)) >= CMSIZE ||
+						commentoffset + 1 + commentlen > next)
 					{
 						FreeLRU((struct cachedblock *)dirblk);
 						return NULL;
 					}
-					offset += entry->next;
-					entry = NEXTENTRY(entry);
+					offset += next;
+					entry = (struct direntry *)((UBYTE *)entry + next);
 				}
 
 				dirblk->volume = g->currentvolume;
@@ -4340,39 +4387,37 @@ void GetExtraFields(struct direntry *direntry, struct extrafields *extrafields)
 {
 	union extrawords *extra = (union extrawords *)extrafields;
 	UWORD *fields = (UWORD *)(((UBYTE *)direntry) + direntry->next);
+	UWORD *limit;
 	UWORD flags, i, minoffset;
 
+	memset(extra, 0, sizeof(*extra));
 	if ((direntry->next & 1) != 0 ||
 		direntry->next < sizeof(struct direntry) ||
 		offsetof(struct direntry, startofname) + direntry->nlength >= direntry->next)
 	{
-		memset(extra, 0, sizeof(*extra));
 		extrafields->prot |= direntry->protection;
 		return;
 	}
 	minoffset = (sizeof(struct direntry) + direntry->nlength + *COMMENT(direntry)) & 0xfffe;
 	if (direntry->next < minoffset + 2)
 	{
-		memset(extra, 0, sizeof(*extra));
 		extrafields->prot |= direntry->protection;
 		return;
 	}
 
-	flags = *(--fields);
-	for (i = 0; i < sizeof(struct extrafields) / 2; i++, flags >>= 1)
+	/* stop at the last present field; the others stay zero */
+	limit = (UWORD *)((UBYTE *)direntry + minoffset);
+	flags = *(--fields) & ((1 << (sizeof(struct extrafields) / 2)) - 1);
+	for (i = 0; flags; i++, flags >>= 1)
 	{
 		if (flags & 1)
 		{
-			if ((UBYTE *)(fields - 1) < (UBYTE *)direntry + minoffset)
+			if (fields - 1 < limit)
 			{
 				memset(extra, 0, sizeof(*extra));
 				break;
 			}
 			extra->w[i] = *(--fields);
-		}
-		else
-		{
-			extra->w[i] = 0;
 		}
 	}
 
