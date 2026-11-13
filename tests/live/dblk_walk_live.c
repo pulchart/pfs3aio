@@ -24,6 +24,9 @@
  *  FALSE from the walk -> FALSE without the "inconsistency" message (that is
  *  only for a chain without the block) and without saving anything, even if
  *  the leftover anode of a failed read happens to carry the wanted blocknr.
+ *  A block that names its own anode in not_used_2 is updated with one anode
+ *  read; a stale or empty number falls back to the walk, and the walk stores
+ *  the anode it found in a block behind the first (not in the first).
  * RemoveEmptyDBlocks (through FreeEmptyDBlk): empty blocks behind the first
  *  one with a good chain are removed (prev passed on); blocks whose chain
  *  loops / can't be read / lacks the block are kept, unlocked again, updateok
@@ -93,6 +96,8 @@ typedef struct globaldata
 #define IsEmptyDBlk(blk) (FIRSTENTRY(blk)->next == 0)
 #define updateok g->updateok
 #define MinRemove(node) mock_remove((struct MN *)(node))
+#define DB_GETSELF(b) (((ULONG)(b)->not_used_2[0] << 16) | (b)->not_used_2[1])
+#define DB_SETSELF(b, n) ((b)->not_used_2[0] = (UWORD)((n) >> 16), (b)->not_used_2[1] = (UWORD)(n))
 
 /* ---- mock anode store ---- */
 #define MAXN 70100
@@ -286,6 +291,34 @@ static BOOL update(ULONG anodenr, ULONG oldblocknr, ULONG newblocknr)
 	return UpdateDBLK((struct cachedblock *)&DB1, newblocknr, &G);
 }
 
+static BOOL update_self(ULONG anodenr, ULONG self, ULONG oldblocknr, ULONG newblocknr)
+{
+	memset(&DB1, 0, sizeof DB1);
+	DB1.blk.anodenr = anodenr;
+	DB_SETSELF(&DB1.blk, self);
+	DB1.oldblocknr = oldblocknr;
+	DB1.blocknr = newblocknr;
+	ntrysave = nerrmsg = nrehash = 0; saved_nr = saved_blocknr = 0;
+	getcalls = 0; runaway = 0;
+	return UpdateDBLK((struct cachedblock *)&DB1, newblocknr, &G);
+}
+
+static void test_self(void)
+{
+	reset();
+	chain(20, 3, 200);
+	CHECK(update_self(20, 22, 202, 570) == TRUE && saved_nr == 22 && saved_blocknr == 570 && getcalls == 1,
+		"own anode named: one read (%lu reads, saved %lu)", (unsigned long)getcalls, (unsigned long)saved_nr);
+	CHECK(update_self(20, 21, 202, 571) == TRUE && saved_nr == 22 && DB_GETSELF(&DB1.blk) == 22,
+		"stale own anode: walk, then stored (saved %lu, field %lu)", (unsigned long)saved_nr, (unsigned long)DB_GETSELF(&DB1.blk));
+	CHECK(update_self(20, 0, 201, 572) == TRUE && saved_nr == 21 && DB_GETSELF(&DB1.blk) == 21,
+		"no own anode: walk, then stored (field %lu)", (unsigned long)DB_GETSELF(&DB1.blk));
+	CHECK(update_self(20, 0, 200, 573) == TRUE && saved_nr == 20 && DB_GETSELF(&DB1.blk) == 0,
+		"first block: field stays 0 (field %lu)", (unsigned long)DB_GETSELF(&DB1.blk));
+	CHECK(update_self(20, 0, 999, 574) == FALSE && ntrysave == 0 && DB_GETSELF(&DB1.blk) == 0,
+		"block not in chain: nothing stored");
+}
+
 static void test_updatedblk(void)
 {
 	reset();
@@ -439,6 +472,7 @@ int main(void)
 {
 	test_walk();
 	test_updatedblk();
+	test_self();
 	test_remove();
 
 	if (fails) { printf("  %d check(s) failed\n", fails); return 1; }

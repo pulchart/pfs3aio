@@ -971,9 +971,16 @@ static BOOL UpdateDBLK (struct cachedblock *blk, ULONG newblocknr, globaldata *g
 
 	LOCK(blk);
 
-	/* get old anode (all 1-block anodes) */
-	if (!GetAnodeOfDBlk(dblk->blk.anodenr, oldblocknr, &anode, &prev, g))
-		return FALSE;
+	/* get old anode (all 1-block anodes), from the block if it names it */
+	if (!DB_GETSELF(&dblk->blk) || !GetAnode(&anode, DB_GETSELF(&dblk->blk), g) ||
+		anode.blocknr != oldblocknr)
+	{
+		if (!GetAnodeOfDBlk(dblk->blk.anodenr, oldblocknr, &anode, &prev, g))
+			return FALSE;
+		/* remember it; the block is written anyway */
+		if (anode.blocknr == oldblocknr && anode.nr != dblk->blk.anodenr)
+			DB_SETSELF(&dblk->blk, anode.nr);
+	}
 
 	/* change it.. */
 	if (anode.blocknr != oldblocknr)

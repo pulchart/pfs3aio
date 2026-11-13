@@ -1058,6 +1058,12 @@ typedef struct lockentry
 #define FirstReserved   (g->currentvolume->rootblk->firstreserved)
 #define InPartition(blk)  ((blk)>=g->firstblock && (blk)<=g->lastblock)
 #define BLOCKSIZE (g->blocksize)
+/* A dirblock behind the first one of its directory names its own anode in
+ * not_used_2, so UpdateDBLK can skip the walk along the chain. 0 or a stale
+ * number only costs the walk: the anode is used when it points at the block.
+ */
+#define DB_GETSELF(b) (((ULONG)(b)->not_used_2[0] << 16) | (b)->not_used_2[1])
+#define DB_SETSELF(b, n) ((b)->not_used_2[0] = (UWORD)((n) >> 16), (b)->not_used_2[1] = (UWORD)(n))
 #define BLOCKSIZEMASK (g->blocksize - 1)
 #define BLOCKSHIFT (g->blockshift)
 #define DIRECTSIZE (g->directsize)

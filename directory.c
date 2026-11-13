@@ -3952,9 +3952,21 @@ static BOOL AddDirectoryEntry(union objectinfo *dir, struct direntry *newentry,
 		}
 		if (!SaveAnode(&newanode, newanode.nr, g))
 			return FALSE;
+		DB_SETSELF(&blok->blk, 0);
 		entry = (struct direntry *)&blok->blk.entries;
 		memcpy(entry, newentry, newentry->next);
 		*(UBYTE *)NEXTENTRY(entry) = 0;     // mark end of dirblock
+
+		/* the old first block is behind it now, at newanodenr */
+		{
+			struct cdirblock *old = LoadDirBlock(anode.blocknr, g);
+
+			if (old && DB_GETSELF(&old->blk) != newanodenr)
+			{
+				DB_SETSELF(&old->blk, newanodenr);
+				MakeBlockDirty((struct cachedblock *)old, g);
+			}
+		}
 
 	}
 

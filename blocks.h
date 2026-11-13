@@ -293,7 +293,7 @@ struct dirblock
     UWORD id;               /* 'DB'                             */
     UWORD not_used;
     ULONG datestamp;
-    UWORD not_used_2[2];
+    UWORD not_used_2[2];    /* own anode, 0 in the first block, see DB_GETSELF */
     ULONG anodenr;          /* anodenr belonging to this directory (points to FIRST block of dir) */
     ULONG parent;           /* parent                           */
     UBYTE entries[0];       /* entries                          */
