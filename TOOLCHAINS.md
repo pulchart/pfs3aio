@@ -38,13 +38,11 @@ Several gcc versions from one image family:
 |---|---|---|---|
 | gcc6 | 6.5.0b | `gcc-v6.5.0b-20261103` | pinned, see below |
 | gcc13 | 13.4.0b | `gcc-v13.4` | nothing |
-| gcc16 | 16.2.0b | `gcc-v16.2` | `-std=gnu17` |
+| gcc16 | 16.2.0b | `gcc-v16.2` | nothing |
 
 Nothing has to be bootstrapped. `make all` pulls what it needs; each image is 5 to 10 GB unpacked.
 
 They all install into `/opt/amiga`, which the auto-detection in `makefile` finds, so none of them passes `AMIGA_PREFIX`. That is also why a plain `make` still works against a host install: `makefile` prefers `~/opt/m68k-amigaos` and falls back to `/opt/amiga`, and `AMIGA_PREFIX=` or `CC=` override it.
-
-**gcc 16 needs `-std=gnu17`.** It defaults to C23, where `struct.h:306`'s `typedef enum {false, true} bool;` is a syntax error. gcc 6.5 does not know the option at all. gcc 13.4 accepts it but does not need it, and leaving it off keeps its output byte-identical to what the previously used locally built image produced.
 
 **gcc 6.5 is pinned to a dated tag**, not the floating `gcc-v6.5.0b`, because a floating build once miscompiled `intlcmp`. See "Issue 3" below. `gcc-v6.5.0b-20261103` carries bebbo build `20260819091705`, which does not have that bug.
 

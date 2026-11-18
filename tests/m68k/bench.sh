@@ -64,7 +64,7 @@ build() {	# $1=toolchain $2=tier
 	case $tc in
 	gcc6)  gccbuild "$GCC6_TAG" "$tier" "$rel" "" ;;
 	gcc13) gccbuild "$GCC13_TAG" "$tier" "$rel" "" ;;
-	gcc16) gccbuild "$GCC16_TAG" "$tier" "$rel" "-std=gnu17" ;;
+	gcc16) gccbuild "$GCC16_TAG" "$tier" "$rel" "" ;;
 	esac
 	[ -f "$out" ]
 }

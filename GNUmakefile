@@ -28,13 +28,10 @@ GCC16_TAG ?= gcc-v16.2
 # gcc 6.5 takes a dated tag, not the floating one: a floating build once
 # miscompiled intlcmp at 68020+. See TOOLCHAINS.md, "Issue 3".
 
-# gcc 16 defaults to C23, where struct.h:306 "typedef enum {false, true}
-# bool;" is a syntax error. gcc 6.5 does not know -std=gnu17 at all; 13.4
-# accepts it but does not need it, and leaving it off keeps its output
-# byte-identical to what the previous locally built image produced.
+# Extra flags of one toolchain, empty by default.
 GCC6_EXTRA ?=
 GCC13_EXTRA ?=
-GCC16_EXTRA ?= -std=gnu17
+GCC16_EXTRA ?=
 
 # Appended to every toolchain. Empty by default so results match a plain
 # "make".
