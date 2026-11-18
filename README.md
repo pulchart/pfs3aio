@@ -13,7 +13,7 @@ Every binary names its own build in the `$VER` string, readable with `Version <f
 
 **These are not official builds and they are untested. Use them at your own risk.** They exist so the differences between the compilers and the target CPUs can be tried on real hardware. How a build behaves on your machine, and anything you notice about the builds themselves, is welcome in [issues here](https://github.com/pulchart/pfs3aio/issues), and a fix is best sent as a pull request. A bug in PFS3 itself belongs [upstream](https://github.com/tonioni/pfs3aio/issues), once it reproduces with an official build and is not down to the compiler.
 
-Builds are attached to the [releases](https://github.com/pulchart/pfs3aio/releases), each with a table of every build. Files are named `pfs3aio-<tag>-<tier>-<toolchain>`.
+Builds are attached to the [releases](https://github.com/pulchart/pfs3aio/releases), each with a table of every build. Files are named `pfs3aio-<tag>-<tier>-<toolchain>`. pfsdoctor, which checks and repairs PFS3 volumes, comes as `pfsdoctor-<tag>-<tier>-gcc16` for the `000` and `020` tiers.
 
 ## Large files
 
@@ -27,9 +27,10 @@ A build with an `l` after the tier (`020l`) handles files above 4 GiB. The other
 ## Building
 
 ```sh
-make              # every toolchain, one binary per target CPU, into compare/
+make              # every toolchain, one binary per target CPU, into compare/, and pfsdoctor
 make install      # side by side as pfs3aio.<toolchain> under /opt/AmigaOS/pfs/v20.0
 make dist         # the release set into dist/, which git ignores
+make pfsdoctor    # pfsdoctor for the 000 and 020 tiers with gcc 16.2
 make EXTRA=1      # also the 030, 040, 060 and 080a builds, never part of a release
 make verify       # format, write, read back, plus the instruction audits
 make -f makefile  # upstream's own build and LHA package, see below

@@ -1,0 +1,70 @@
+# Build pfsdoctor with one gcc toolchain, one binary per tier.
+#
+#   make -C pfsdoctor -f makefile.gcc [OUTDIR=dir] [TIERS="000 020"] [AMIGA_PREFIX=/path]
+#
+# Driven by ../GNUmakefile with the tiers of PFSDOCTOR_TIERS in ../tiers.mk.
+# ./makefile is upstream's single build.
+
+.DEFAULT_GOAL := all
+
+NOWDATE := "\"$(shell date "+%-d.%-m.%Y")\""
+
+AMIGA_PREFIX ?= $(firstword $(wildcard $(HOME)/opt/m68k-amigaos /opt/amiga))
+ifeq ($(origin CC),default)
+CC := $(AMIGA_PREFIX)/bin/m68k-amigaos-gcc
+endif
+
+CPPFLAGS = -I.
+LIBS = -lamiga -lgcc -lnix13 -s
+
+CFLAGS_COMMON = -Os -noixemul -fomit-frame-pointer -DREVDATE=$(NOWDATE) $(EXTRA_CFLAGS)
+
+include ../tiers.mk
+TIERS = $(PFSDOCTOR_TIERS)
+
+OUTDIR = build
+OBJDIR = $(OUTDIR)/obj
+
+SRC_NAMES = console access device fullscan standardscan stats
+HEADERS = doctor.h pfs3.h ../pfs3disk.h ../pfsbuild.h ../versionhistory.doc
+
+include ../version.mk
+
+define TIER_RULES
+CFLAGS_$(1) = $$(CFLAGS_COMMON) $$(TIER_CFLAGS_$(1)) $$(TIER_TAG_$(1))
+OUTDIR_$(1) = $$(OUTDIR)/$(1)
+OBJDIR_$(1) = $$(OBJDIR)/$(1)
+ASMDIR_$(1) = $$(OUTDIR)/asm/$(1)
+TARGET_$(1) = $$(OUTDIR_$(1))/pfsdoctor
+OBJS_$(1) = $$(addprefix $$(OBJDIR_$(1))/,$$(addsuffix .o,$$(SRC_NAMES)))
+ASMS_$(1) = $$(addprefix $$(ASMDIR_$(1))/,$$(addsuffix .s,$$(SRC_NAMES)))
+
+$$(TARGET_$(1)): $$(OBJS_$(1)) | $$(OUTDIR_$(1))
+	$$(CC) -o $$@ $$(OBJS_$(1)) $$(CFLAGS_$(1)) $$(LIBS)
+
+$$(OBJDIR_$(1))/%.o: %.c $$(HEADERS) | $$(OBJDIR_$(1))
+	$$(CC) $$(CFLAGS_$(1)) $$(CPPFLAGS) -c -o $$@ $$<
+
+$$(ASMDIR_$(1))/%.s: %.c $$(HEADERS) | $$(ASMDIR_$(1))
+	$$(CC) $$(CFLAGS_$(1)) $$(CPPFLAGS) -S -o $$@ $$<
+
+$$(OBJDIR_$(1))/console.o $$(ASMDIR_$(1))/console.s: $$(ORIGINSTAMP)
+
+$$(OUTDIR_$(1)) $$(OBJDIR_$(1)) $$(ASMDIR_$(1)):
+	mkdir -p $$@
+endef
+
+$(foreach t,$(TIERS),$(eval $(call TIER_RULES,$(t))))
+
+.PHONY: all asm clean check-cc
+
+all: check-cc $(foreach t,$(TIERS),$(TARGET_$(t)))
+
+# Assembly for the 68060 audit, with the flags of the objects.
+asm: check-cc $(foreach t,$(TIERS),$(ASMS_$(t)))
+
+check-cc:
+	@command -v $(CC) >/dev/null || { echo "ERROR: compiler not found: $(CC)"; exit 1; }
+
+clean:
+	rm -rf $(OUTDIR)

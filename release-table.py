@@ -4,9 +4,10 @@
 #
 #   python3 release-table.py <tag> [--dist DIR] [--out DIR]
 #
-# Every binary in DIST is copied to OUT/<tag>/ as
-# pfs3aio-<tag>-<tier>-<toolchain> (pfs3aio-large-<tag>-... for the large file
-# tiers), and the table links to those assets. A
+# Every binary in DIST, <tier>/<program>.<toolchain>, is copied to OUT/<tag>/
+# as <program>-<tag>-<tier>-<toolchain> (pfs3aio-large-<tag>-... for the large
+# file tiers), and the tables link to those assets. The handler gets one table
+# per volume format, every other program in PROGRAMS one table of its own. A
 # release is always a full rebuild: every binary must carry [<fork>/<tag>] in
 # its own $VER string, so one left over from an earlier build is refused.
 # Columns come from the binaries and from tiers.mk, never from a second copy of
@@ -31,6 +32,12 @@ STAMP_RE = re.compile(r"[A-Za-z0-9._-]+$")
 ORDER = ["gcc13", "gcc6", "gcc16"]
 
 LEGEND = "_Green: the builds I use most._"
+
+# Programs other than the handler, in table order, with the line above their
+# table.
+PROGRAMS = [
+    ("pfsdoctor", "Checks and repairs PFS3 volumes."),
+]
 
 # One table per volume format: LARGE_FILE_SIZE of the tier in tiers.mk decides.
 FORMATS = [
@@ -134,15 +141,19 @@ def rows(dist):
             if not STAMP_RE.match(stamp):
                 die("%s: stamp %r has characters that break a URL" % (path, stamp))
             if "." not in name:
-                die("%s: expected pfs3aio.<toolchain>" % path)
-            tc = name.split(".", 1)[1]
+                die("%s: expected <program>.<toolchain>" % path)
+            prog, tc = name.split(".", 1)
+            if prog != "pfs3aio" and prog not in dict(PROGRAMS):
+                die("%s: %s is not in PROGRAMS" % (path, prog))
+            large = prog == "pfs3aio" and is_large(tier)
             out.append({
+                "prog": prog,
                 "tier": tier,
                 "tc": tc,
                 "path": path,
                 "cc": cc_of(tag),
                 "stamp": stamp,
-                "asset": "pfs3aio-%s%s-%s-%s" % ("large-" if is_large(tier) else "", stamp, shown(tier), tc),
+                "asset": "%s-%s%s-%s-%s" % (prog, "large-" if large else "", stamp, shown(tier), tc),
             })
     return out
 
@@ -179,7 +190,7 @@ def main():
     ap = argparse.ArgumentParser(description="Stage a GitHub release for one tag.")
     ap.add_argument("tag")
     ap.add_argument("--dist", default=os.path.join(HERE, "dist"),
-                    help="binaries, laid out <dist>/<tier>/pfs3aio.<tc>")
+                    help="binaries, laid out <dist>/<tier>/<program>.<tc>")
     ap.add_argument("--out", default=os.path.join(HERE, "release"),
                     help="staging directory, one subdirectory per tag")
     a = ap.parse_args()
@@ -204,7 +215,7 @@ def main():
     os.makedirs(out, exist_ok=True)
     # Only what an earlier run of this script put there.
     for old in os.listdir(out):
-        if old == "notes.md" or old.startswith("pfs3aio-"):
+        if old == "notes.md" or old.split("-", 1)[0] in ["pfs3aio"] + [p for p, _ in PROGRAMS]:
             os.remove(os.path.join(out, old))
     for r in mine:
         shutil.copy2(r["path"], os.path.join(out, r["asset"]))
@@ -212,10 +223,15 @@ def main():
     # "News" only when release-notes/<tag>.md has something to say.
     text = open(news).read().strip() if os.path.isfile(news) else ""
     sections = []
+    handler = [r for r in rs if r["prog"] == "pfs3aio"]
     for large, name, about in FORMATS:
-        part = [r for r in rs if (tier_field("LARGE", r["tier"]) or "0") == large]
+        part = [r for r in handler if (tier_field("LARGE", r["tier"]) or "0") == large]
         if part:
             sections.append("### `%s`\n\n%s\n\n%s\n" % (name, about, render(a.tag, part)))
+    for prog, about in PROGRAMS:
+        part = [r for r in rs if r["prog"] == prog]
+        if part:
+            sections.append("### %s\n\n%s\n\n%s\n" % (prog, about, render(a.tag, part)))
     body = ("## News\n\n" + text + "\n\n" if text else "") \
         + "## Downloads\n\n" + LEGEND + "\n\n" + "\n".join(sections)
     notes = os.path.join(out, "notes.md")

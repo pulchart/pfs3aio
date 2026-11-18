@@ -83,6 +83,11 @@ TIER_NOTE_SINCE_080 = 20260913-1
 TIER_NOTE_080a = with Line-A
 TIER_NOTE_080l = no Line-A
 
+# pfsdoctor is built with gcc 16.2 only, for these tiers. Their fields are
+# the handler's.
+PFSDOCTOR_TIERS = 000 020
+PFSDOCTOR_TOOLCHAIN = gcc16
+
 # Builds the author runs, <tier>:<toolchain>, shown green in the release table.
 # Every other badge is grey: those are there to compare compilers and CPUs.
 RELEASE_PICKS = 000:gcc16 020:gcc16

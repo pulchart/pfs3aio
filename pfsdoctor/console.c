@@ -15,8 +15,13 @@
 #include "pfs3.h"
 #include "doctor.h"
 #include "../versionhistory.doc"
+#include "../pfsbuild.h"
 
-const char version[] = "$VER: pfsdoctor " REVISION;
+#ifdef REVDATE
+const char version[] = "$VER: pfsdoctor " REVISION " " PFS_BUILD "(" REVDATE ")";
+#else
+const char version[] = "$VER: pfsdoctor " REVISION " " PFS_BUILD;
+#endif
 
 enum mode mode = repair;	/* check, repair, unformat or search */
 
