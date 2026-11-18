@@ -31,16 +31,20 @@ STAMP_RE = re.compile(r"[A-Za-z0-9._-]+$")
 # Column order; a toolchain not listed goes last, alphabetically.
 ORDER = ["gcc13", "gcc6", "gcc16"]
 
-LEGEND = "_Green: the builds I use most._"
+# Badge color per toolchain, and how the legend names it.
+COLORS = {"gcc6": "orange", "gcc13": "blue", "gcc16": "brightgreen"}
+COLOR_NAMES = {"brightgreen": "green"}
 
-# Programs other than the handler, in table order, with the line above their
-# table.
+# Programs other than the handler, in table order, with what each does. They
+# share one table after the handler's.
 PROGRAMS = [
-    ("pfsdoctor", "Checks and repairs PFS3 volumes."),
-    ("setdeldir", "Sets the size of the delete directory of a mounted volume."),
-    ("setfnsize", "Sets the maximum file name length of a mounted volume."),
-    ("setlargefile", "Switches large file support on for a mounted PFS\\2 volume."),
+    ("pfsdoctor", "checks and repairs PFS3 volumes"),
+    ("setdeldir", "sets the size of the delete directory"),
+    ("setfnsize", "sets the maximum file name length"),
+    ("setlargefile", "switches large file support on for a PFS\\2 volume"),
 ]
+PROGRAMS_TITLE = "Tools"
+
 
 # One table per volume format: LARGE_FILE_SIZE of the tier in tiers.mk decides.
 FORMATS = [
@@ -88,15 +92,6 @@ def runs_on(tier, stamp):
     since = tier_field("NOTE_SINCE", tier)
     if note and (not since or stamp >= since):
         out = "%s (%s)" % (out, note)
-    return out
-
-
-def picks():
-    m = re.search(r"^RELEASE_PICKS\s*=\s*(.*?)\s*$", open(TIERS_MK).read(), re.M)
-    out = set(m.group(1).split()) if m else set()
-    for p in out:
-        if not tier_field("MINCPU", p.split(":")[0]):
-            die("RELEASE_PICKS names %s, and that tier is not in %s" % (p, TIERS_MK))
     return out
 
 
@@ -166,11 +161,36 @@ def url(tag, r):
 
 
 def badge(tag, r):
-    color = "green" if "%s:%s" % (r["tier"], r["tc"]) in picks() else "lightgrey"
+    color = COLORS.get(r["tc"], "lightgrey")
     img = ("https://img.shields.io/github/downloads/%s/%s/%s"
            "?displayAssetName=false&label=%s&color=%s"
            % (REPO, tag, r["asset"], r["cc"], color))
     return "[![%s](%s)](%s)" % (r["cc"], img, url(tag, r))
+
+
+def legend(rs):
+    label = {r["tc"]: r["cc"] for r in rs}
+    tcs = sorted(label, key=lambda t: (ORDER.index(t) if t in ORDER else len(ORDER), t))
+    parts = ["%s for %s" % (COLOR_NAMES.get(COLORS.get(t, "lightgrey"), COLORS.get(t, "lightgrey")),
+                            label[t].replace("gcc", "gcc ")) for t in tcs]
+    return "The badge color shows the compiler, " + ", ".join(parts[:-1]) + " and " + parts[-1] + "."
+
+
+def render_programs(tag, rs):
+    tcs = sorted({r["tc"] for r in rs},
+                 key=lambda t: (ORDER.index(t) if t in ORDER else len(ORDER), t))
+    label = {r["tc"]: r["cc"] for r in rs}
+    cell = {(r["prog"], r["tier"], r["tc"]): r for r in rs}
+    lines = ["| program | does | build | runs on | " + " | ".join(label[t] for t in tcs) + " |",
+             "|---|---|---|---|" + "---|" * len(tcs)]
+    for prog, does in PROGRAMS:
+        tiers = sorted({r["tier"] for r in rs if r["prog"] == prog})
+        for i, tier in enumerate(tiers):
+            cells = [badge(tag, cell[(prog, tier, t)]) if (prog, tier, t) in cell else "-" for t in tcs]
+            newest = max(r["stamp"] for r in rs if r["prog"] == prog and r["tier"] == tier)
+            head = "`%s` | %s" % (prog, does) if i == 0 else " | "
+            lines.append("| %s | `%s` | %s | %s |" % (head, shown(tier), runs_on(tier, newest), " | ".join(cells)))
+    return "\n".join(lines)
 
 
 def render(tag, rs):
@@ -231,12 +251,11 @@ def main():
         part = [r for r in handler if (tier_field("LARGE", r["tier"]) or "0") == large]
         if part:
             sections.append("### `%s`\n\n%s\n\n%s\n" % (name, about, render(a.tag, part)))
-    for prog, about in PROGRAMS:
-        part = [r for r in rs if r["prog"] == prog]
-        if part:
-            sections.append("### %s\n\n%s\n\n%s\n" % (prog, about, render(a.tag, part)))
+    part = [r for r in rs if r["prog"] != "pfs3aio"]
+    if part:
+        sections.append("### %s\n\n%s\n" % (PROGRAMS_TITLE, render_programs(a.tag, part)))
     body = ("## News\n\n" + text + "\n\n" if text else "") \
-        + "## Downloads\n\n" + LEGEND + "\n\n" + "\n".join(sections)
+        + "## Downloads\n\n" + legend(rs) + "\n\n" + "\n".join(sections)
     notes = os.path.join(out, "notes.md")
     with open(notes, "w") as f:
         f.write(body)

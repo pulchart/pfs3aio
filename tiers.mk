@@ -88,10 +88,6 @@ TIER_NOTE_080l = no Line-A
 PROGRAM_TIERS = 000 020
 PROGRAM_TOOLCHAIN = gcc16
 
-# Builds the author runs, <tier>:<toolchain>, shown green in the release table.
-# Every other badge is grey: those are there to compare compilers and CPUs.
-RELEASE_PICKS = 000:gcc16 020:gcc16
-
 # LARGE_FILE_SIZE of the build: 0 is 32 bit file sizes, 2 supports file sizes
 # above 4G and formats every new volume as one. A volume formatted that way
 # is refused by the builds with 0. The tier name carries an l for 2.
