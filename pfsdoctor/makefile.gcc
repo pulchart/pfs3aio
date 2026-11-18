@@ -1,8 +1,8 @@
 # Build pfsdoctor with one gcc toolchain, one binary per tier.
 #
-#   make -C pfsdoctor -f makefile.gcc [OUTDIR=dir] [TIERS="000 020"] [AMIGA_PREFIX=/path]
+#   make -C pfsdoctor -f makefile.gcc [OUTDIR=dir] [AMIGA_PREFIX=/path]
 #
-# Driven by ../GNUmakefile with the tiers of PFSDOCTOR_TIERS in ../tiers.mk.
+# Driven by ../GNUmakefile with the tiers of PROGRAM_TIERS in ../tiers.mk.
 # ./makefile is upstream's single build.
 
 .DEFAULT_GOAL := all
@@ -20,7 +20,7 @@ LIBS = -lamiga -lgcc -lnix13 -s
 CFLAGS_COMMON = -Os -noixemul -fomit-frame-pointer -DREVDATE=$(NOWDATE) $(EXTRA_CFLAGS)
 
 include ../tiers.mk
-TIERS = $(PFSDOCTOR_TIERS)
+TIERS = $(PROGRAM_TIERS)
 
 OUTDIR = build
 OBJDIR = $(OUTDIR)/obj

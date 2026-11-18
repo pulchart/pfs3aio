@@ -79,9 +79,9 @@ TOOLCHAINS = $(GCC_TOOLCHAINS)
 
 .PHONY: all $(TOOLCHAINS) sizes sibcall-proof install \
 	$(addprefix asm-,$(TOOLCHAINS)) check-68060 check-linea verify bench driverbench dist \
-	pfsdoctor asm-pfsdoctor clean help
+	pfsdoctor tools asm-pfsdoctor asm-tools clean help
 
-all: $(TOOLCHAINS) pfsdoctor sizes
+all: $(TOOLCHAINS) pfsdoctor tools sizes
 
 help:
 	@echo "Targets:"
@@ -89,7 +89,8 @@ help:
 	@echo "  gcc6            gcc 6.5.0b        -> $(OUT)/gcc6/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
 	@echo "  gcc13           gcc 13.4.0b       -> $(OUT)/gcc13/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
 	@echo "  gcc16           gcc 16.2.0b       -> $(OUT)/gcc16/{$(subst $(space),$(comma),$(TIERS))}/pfs3aio"
-	@echo "  pfsdoctor       gcc 16.2.0b       -> $(OUT)/$(PFSDOCTOR_TOOLCHAIN)/pfsdoctor/{$(subst $(space),$(comma),$(PFSDOCTOR_TIERS))}/pfsdoctor"
+	@echo "  pfsdoctor       gcc 16.2.0b       -> $(OUT)/$(PROGRAM_TOOLCHAIN)/pfsdoctor/{$(subst $(space),$(comma),$(PROGRAM_TIERS))}/pfsdoctor"
+	@echo "  tools           gcc 16.2.0b       -> $(OUT)/$(PROGRAM_TOOLCHAIN)/tools/{$(subst $(space),$(comma),$(PROGRAM_TIERS))}/{$(subst $(space),$(comma),$(PROGRAMS_tools))}"
 	@echo "  sizes           Print the size table for whatever has been built"
 	@echo "  sibcall-proof   Show the RawRead miscompilation with/without the flag"
 	@echo "  install         Build every toolchain, install as pfs3aio.<tc> per build"
@@ -130,25 +131,32 @@ $(eval $(call GCC_RULES,gcc6,gcc 6.5.0b,GCC6))
 $(eval $(call GCC_RULES,gcc13,gcc 13.4.0b,GCC13))
 $(eval $(call GCC_RULES,gcc16,gcc 16.2.0b,GCC16))
 
-# pfsdoctor, with one toolchain and the tiers of PFSDOCTOR_TIERS. Its objects
-# and binaries go to $(OUT)/<toolchain>/pfsdoctor.
-PFSDOCTOR_TC_VAR = $(patsubst gcc%,GCC%,$(PFSDOCTOR_TOOLCHAIN))
-PFSDOCTOR_RUN = $(RUN) $(GCC_IMAGE):$($(PFSDOCTOR_TC_VAR)_TAG) make --no-print-directory \
-	-C pfsdoctor -f makefile.gcc OUTDIR=/out/$(PFSDOCTOR_TOOLCHAIN)/pfsdoctor $(DATES) $(ORIGIN) \
-	EXTRA_CFLAGS="$($(PFSDOCTOR_TC_VAR)_EXTRA) $(COMMON_EXTRA)"
+# pfsdoctor and the tools, with one toolchain and the tiers of PROGRAM_TIERS.
+# The objects and binaries of a directory go to $(OUT)/<toolchain>/<directory>.
+PROGRAM_DIRS = pfsdoctor tools
+PROGRAMS_pfsdoctor = pfsdoctor
+PROGRAMS_tools = setdeldir setfnsize setlargefile
+PROGRAM_TC_VAR = $(patsubst gcc%,GCC%,$(PROGRAM_TOOLCHAIN))
+PROGRAM_RUN = $(RUN) $(GCC_IMAGE):$($(PROGRAM_TC_VAR)_TAG) make --no-print-directory \
+	-C $(1) -f makefile.gcc OUTDIR=/out/$(PROGRAM_TOOLCHAIN)/$(1) $(DATES) $(ORIGIN) \
+	EXTRA_CFLAGS="$($(PROGRAM_TC_VAR)_EXTRA) $(COMMON_EXTRA)"
 
-pfsdoctor: | $(OUT)
-	@echo "=== pfsdoctor, $(PFSDOCTOR_TOOLCHAIN) ($(GCC_IMAGE):$($(PFSDOCTOR_TC_VAR)_TAG)) ==="
-	$(PFSDOCTOR_RUN)
+define PROGRAM_RULES
+$(1): | $$(OUT)
+	@echo "=== $(1), $$(PROGRAM_TOOLCHAIN) ($$(GCC_IMAGE):$$($$(PROGRAM_TC_VAR)_TAG)) ==="
+	$$(call PROGRAM_RUN,$(1))
 
-asm-pfsdoctor: | $(OUT)
-	$(PFSDOCTOR_RUN) asm
+asm-$(1): | $$(OUT)
+	$$(call PROGRAM_RUN,$(1)) asm
+endef
+
+$(foreach d,$(PROGRAM_DIRS),$(eval $(call PROGRAM_RULES,$(d))))
 
 # The 68060 cannot be emulated here (Musashi stops at 68040, which has the
 # 64-bit multiply a 68060 lacks), so this is the only thing standing between a
 # green test run and a binary that will not boot. Read from generated assembly,
 # never from objdump.
-check-68060: $(addprefix asm-,$(TOOLCHAINS)) asm-pfsdoctor
+check-68060: $(addprefix asm-,$(TOOLCHAINS) $(PROGRAM_DIRS))
 	@$(foreach t,$(TIERS_NOT_060),echo "== 68060: $(t) tier not scanned: built $(TIER_CFLAGS_$(t)), reaches $(TIER_MAXCPU_$(t)) only, where 64-bit MULU.L is legal ==";)
 	@rc=0; for tc in $(TOOLCHAINS); do \
 		for cpu in $(TIERS_060); do \
@@ -157,9 +165,11 @@ check-68060: $(addprefix asm-,$(TOOLCHAINS)) asm-pfsdoctor
 			sh tests/check68060.sh "$$d" "$$tc/$$cpu" || rc=1; \
 		done; \
 	done; \
-	for cpu in $(PFSDOCTOR_TIERS); do \
-		d=$(OUT)/$(PFSDOCTOR_TOOLCHAIN)/pfsdoctor/asm/$$cpu; \
-		sh tests/check68060.sh "$$d" "pfsdoctor/$(PFSDOCTOR_TOOLCHAIN)/$$cpu" || rc=1; \
+	for dir in $(PROGRAM_DIRS); do \
+		for cpu in $(PROGRAM_TIERS); do \
+			d=$(OUT)/$(PROGRAM_TOOLCHAIN)/$$dir/asm/$$cpu; \
+			sh tests/check68060.sh "$$d" "$$dir/$(PROGRAM_TOOLCHAIN)/$$cpu" || rc=1; \
+		done; \
 	done; \
 	[ $$rc -eq 0 ] && echo "== 68060: all builds clean ==" || { echo "== 68060: UNSAFE builds above =="; exit 1; }
 
@@ -244,7 +254,7 @@ install: $(INSTALL_TOOLCHAINS)
 
 # Only the release tiers, whatever TIERS or EXTRA say.
 dist: override TIERS = $(RELEASE_TIERS)
-dist: $(INSTALL_TOOLCHAINS) pfsdoctor
+dist: $(INSTALL_TOOLCHAINS) $(PROGRAM_DIRS)
 	@for cpu in $(TIERS); do \
 		mkdir -p "$(DIST_DIR)/$$cpu"; \
 		for tc in $(INSTALL_TOOLCHAINS); do \
@@ -256,12 +266,14 @@ dist: $(INSTALL_TOOLCHAINS) pfsdoctor
 			printf "  %-8s %-6s -> %s (%s bytes)\n" "$$tc" "$$cpu" "$$dst" "$$(stat -c%s "$$dst")"; \
 		done; \
 	done
-	@for cpu in $(PFSDOCTOR_TIERS); do \
+	@$(foreach d,$(PROGRAM_DIRS),for cpu in $(PROGRAM_TIERS); do \
 		mkdir -p "$(DIST_DIR)/$$cpu"; \
-		dst="$(DIST_DIR)/$$cpu/pfsdoctor.$(PFSDOCTOR_TOOLCHAIN)"; \
-		install -m 644 "$(OUT)/$(PFSDOCTOR_TOOLCHAIN)/pfsdoctor/$$cpu/pfsdoctor" "$$dst" || exit 1; \
-		printf "  %-8s %-6s -> %s (%s bytes)\n" "$(PFSDOCTOR_TOOLCHAIN)" "$$cpu" "$$dst" "$$(stat -c%s "$$dst")"; \
-	done
+		for p in $(PROGRAMS_$(d)); do \
+			dst="$(DIST_DIR)/$$cpu/$$p.$(PROGRAM_TOOLCHAIN)"; \
+			install -m 644 "$(OUT)/$(PROGRAM_TOOLCHAIN)/$(d)/$$cpu/$$p" "$$dst" || exit 1; \
+			printf "  %-8s %-6s -> %s (%s bytes)\n" "$(PROGRAM_TOOLCHAIN)" "$$cpu" "$$dst" "$$(stat -c%s "$$dst")"; \
+		done; \
+	done;)
 
 clean:
 	rm -rf $(OUT)

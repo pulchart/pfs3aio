@@ -57,6 +57,7 @@
 #define PFS_ORIGIN ""
 #endif
 
-#define PFS_BUILD "[" PFS_CC "/" PFS_CPU "]" PFS_RANGE PFS_ORIGIN " "
+#define PFS_TAG "[" PFS_CC "/" PFS_CPU "]" PFS_RANGE PFS_ORIGIN
+#define PFS_BUILD PFS_TAG " "
 
 #endif

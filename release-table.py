@@ -37,6 +37,9 @@ LEGEND = "_Green: the builds I use most._"
 # table.
 PROGRAMS = [
     ("pfsdoctor", "Checks and repairs PFS3 volumes."),
+    ("setdeldir", "Sets the size of the delete directory of a mounted volume."),
+    ("setfnsize", "Sets the maximum file name length of a mounted volume."),
+    ("setlargefile", "Switches large file support on for a mounted PFS\\2 volume."),
 ]
 
 # One table per volume format: LARGE_FILE_SIZE of the tier in tiers.mk decides.
