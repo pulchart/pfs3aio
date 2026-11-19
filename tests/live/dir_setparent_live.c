@@ -27,17 +27,13 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include "live.h"
 
-typedef uint32_t ULONG; typedef int32_t LONG; typedef uint16_t UWORD; typedef int16_t WORD;
-typedef uint8_t UBYTE; typedef int8_t BYTE; typedef intptr_t SIPTR; typedef intptr_t IPTR;
-typedef int BOOL; typedef char *STRPTR;
-#define TRUE 1
-#define FALSE 0
-#define DOSTRUE (-1)
-#define DOSFALSE 0
+typedef intptr_t IPTR;
+typedef char *STRPTR;
 #define DELDIR 1
 #define CALLCAP 100	/* a cycle must be found in far fewer GetParent calls than this */
-#define ANODE_ROOTDIR 5			/* as in blocks.h */
+#define ANODE_ROOTDIR 5			/* as in pfs3disk.h */
 #define FNSIZE 108
 #define CMSIZE 80
 #define MAX_ENTRYSIZE (sizeof(struct direntry) + FNSIZE + CMSIZE + 34)
@@ -49,18 +45,11 @@ typedef int BOOL; typedef char *STRPTR;
 #define ST_LINKDIR 4
 #define ST_FILE (-3)
 #define ST_LINKFILE (-4)
-#define ERROR_OBJECT_IN_USE 202		/* dos/dos.h */
-#define ERROR_OBJECT_EXISTS 203
-#define ERROR_OBJECT_NOT_FOUND 205
-#define ERROR_OBJECT_WRONG_TYPE 212
-#define ERROR_DISK_NOT_VALIDATED 213
-#define ERROR_DISK_FULL 221
-#define ERROR_WRITE_PROTECTED 223
 #define PFS_ERROR_INCONSISTENT ERROR_DISK_NOT_VALIDATED		/* struct.h */
 #define SPECIAL_FLUSHED 3
 #define SPECIAL_DELDIR 1
 
-/* on-disk layouts, as in blocks.h */
+/* on-disk layouts, as in pfs3disk.h */
 #pragma pack(push, 2)
 struct direntry {
 	UBYTE next; BYTE type; ULONG anode; ULONG fsize;
@@ -126,8 +115,10 @@ static BOOL GetAnode(struct canode *a, ULONG nr, globaldata *g)
 	return TRUE;
 }
 /* as the real NextBlock/CorrectAnode, without the cycle marker */
-static BOOL NextBlock(struct canode *a, ULONG *off, globaldata *g)
+struct anodewalk { ULONG mark, steps; };
+static BOOL NextBlock(struct canode *a, ULONG *off, struct anodewalk *w, globaldata *g)
 {
+	(void)w;
 	(*off)++;
 	while (*off >= a->clustersize) {
 		if (!a->next) return FALSE;
@@ -223,8 +214,6 @@ static void PFSDoNotify(struct fileinfo *fi, BOOL c, globaldata *g) { (void)fi; 
 #include "gen/IsChildOf.c"
 #include "gen/RenameAndMove.c"
 
-static int failures;
-#define CHECK(cond, ...) do { if (!(cond)) { failures++; printf("  FAIL: " __VA_ARGS__); printf("\n"); } } while (0)
 
 static void reset(void)
 {
@@ -448,7 +437,7 @@ int main(void)
 {
 	test_setdirparent();
 	test_rename();
-	if (failures) { printf("dir_setparent_live: %d FAILED\n", failures); return 1; }
+	if (fails) { printf("dir_setparent_live: %d FAILED\n", fails); return 1; }
 	printf("  PASS: SetDirParent and RenameAndMove directory moves\n");
 	return 0;
 }

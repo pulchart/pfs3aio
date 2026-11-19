@@ -11,3 +11,7 @@ build/
 compare/
 /dist/
 /release/
+/build/
+/tools/setdeldir
+/tools/setfnsize
+/tools/setlargefile

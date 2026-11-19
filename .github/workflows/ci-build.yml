@@ -21,7 +21,7 @@ jobs:
     name: Native regression tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -43,7 +43,7 @@ jobs:
             large_file_size: 1
             target: pfs3aio-largefile
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -55,7 +55,7 @@ jobs:
         run: make -j2 LARGE_FILE_SIZE=${{ matrix.large_file_size }} all
 
       - name: Upload handlers
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: pfs3aio-handlers-${{ matrix.variant }}
           path: |
@@ -63,13 +63,54 @@ jobs:
             ${{ matrix.target }}-custom
           if-no-files-found: error
 
-  package:
-    name: Package both build variants
-    needs: [test, build]
+  pfsdoctor:
+    name: Build pfsdoctor
     runs-on: ubuntu-latest
     container: stefanreinauer/amiga-gcc:gcc-v13.4
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build pfsdoctor
+        run: make pfsdoctor
+
+      - name: Upload pfsdoctor
+        uses: actions/upload-artifact@v7
+        with:
+          name: pfs3aio-pfsdoctor
+          path: pfsdoctor/pfsdoctor
+          if-no-files-found: error
+
+  tools:
+    name: Build tools
+    runs-on: ubuntu-latest
+    container: stefanreinauer/amiga-gcc:gcc-v13.4
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build tools
+        run: make tools
+
+      - name: Upload tools
+        uses: actions/upload-artifact@v7
+        with:
+          name: pfs3aio-tools
+          path: |
+            tools/setdeldir
+            tools/setfnsize
+            tools/setlargefile
+          if-no-files-found: error
+
+  package:
+    name: Package both build variants
+    needs: [test, build, pfsdoctor, tools]
+    runs-on: ubuntu-latest
+    container: stefanreinauer/amiga-gcc:gcc-v13.4
+    steps:
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -78,14 +119,30 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Download built handlers
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: pfs3aio-handlers-*
           merge-multiple: true
           path: .
 
+      - name: Download pfsdoctor
+        uses: actions/download-artifact@v8
+        with:
+          name: pfs3aio-pfsdoctor
+          path: pfsdoctor
+
+      - name: Download tools
+        uses: actions/download-artifact@v8
+        with:
+          name: pfs3aio-tools
+          path: tools
+
       - name: Restore executable permissions
-        run: chmod +x pfs3aio pfs3aio-custom pfs3aio-largefile pfs3aio-largefile-custom
+        run: |
+          chmod +x \
+            pfs3aio pfs3aio-custom pfs3aio-largefile pfs3aio-largefile-custom \
+            pfsdoctor/pfsdoctor \
+            tools/setdeldir tools/setfnsize tools/setlargefile
 
       - name: Build distribution
         env:
@@ -101,7 +158,7 @@ jobs:
           fi
 
       - name: Upload distribution
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: release-artifacts
           path: |

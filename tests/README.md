@@ -1,6 +1,6 @@
 # pfs3aio test rig
 
-Two layers of tests for the pfs3aio driver.
+Two layers of tests for the pfs3aio driver; `live/` also covers pfsdoctor.
 
 ## `live/` — proofs that the fixes changed behaviour (fail on broken, pass on fixed)
 
@@ -24,17 +24,20 @@ finds the tests with `live/*_live.c`, so a new test needs no registration; the
 `@src`/`@func` tags in its header name the functions it lifts (a later `@src` switches the file; matched at column 0
 of the source, as a definition of exactly that name; if a name is defined more than
 once, such as a `DEBUGMODE` stub, the last definition is used). Each test is written to FAIL on a tree that still
-has the bug it covers and to PASS once it is fixed. Covered:
+has the bug it covers and to PASS once it is fixed. `live/live.h` holds what the tests share: the Amiga integer
+types, `TRUE`/`FALSE`/`DOSTRUE`/`DOSFALSE`, the DOS error values of `dos/dos.h` and the `CHECK` macro with its
+`fails` counter. A test takes on-disk constants and blocks from `pfs3disk.h` of the source under test unless
+its mock needs other fields or a different layout. Covered:
 
 | test | fix it proves |
 |------|---------------|
-| `reserved_bitmap_live.c` | Reject inconsistent reserved ranges and undersized root bitmaps before allocation; preserve exact-capacity and partial-word bitmaps |
+| `reserved_bitmap_live.c` | Reject inconsistent reserved ranges and undersized root bitmaps before allocation; preserve exact-capacity and partial-word bitmaps; queued reserved frees are applied once and undone exactly |
 | `blocksize_live.c`      | logical block size normalized to a power of two (blockshift/blocklogshift agree) |
 | `partlimit_live.c`      | partition end saturates instead of wrapping past 2^32 sectors (no inverted partition) |
 | `ds_retry_live.c`       | DirectSCSI retry restarts in range instead of re-applying blocklogshift and writing outside the partition |
 | `ds_maxtransfer_live.c` | DirectSCSI maxtransfer in native sectors (a 16 KiB MaxTransfer with 4 KB blocks no longer rounds to 0) |
 | `freeanode_live.c`      | FreeAnode marks the correct anodeblock (non-split and split mode, reserved anodes), reports a failed SaveAnode as FALSE without marking, ignores out-of-range seqnrs |
-| `update_cleanup_live.c` | Deferred reserved frees are persisted by a root-only write after the primary commit |
+| `update_cleanup_live.c` | The root write carries the queued reserved frees; a failed one takes them back and keeps the queue |
 | `pending_retry_live.c` | A block whose relocation fails marks its volume; `RetryPendingBlocks` relocates it and clears the mark, keeps the mark when the retry fails, and reads no cache list while nothing is marked |
 | `writeback_live.c` | Relative writeback deadline survives one-second reads and continuous packet traffic; idle flushing, retries and inhibit remain safe |
 | `directory_bounds_live.c` | Reject oversized directory entries and out-of-entry names/comments before caching; safely rewrite valid entries with maximum-length strings |
@@ -60,6 +63,11 @@ has the bug it covers and to PASS once it is fixed. Covered:
 | `dir_setparent_live.c` | `SetDirParent` updates every dirblock of a multi-block, multi-anode directory and fails on an unreadable anode or block; `RenameAndMove` refuses a move into the directory's own subtree or a broken parent chain, and fails with `metadata_error` if the new parent cannot be written |
 | `dir_misc_live.c` | `KillEmpty` deletes real directories only (not a link to one); `DeleteDir` deletes a chain of any length and ends on a looping one; `NewDir` reports `ERROR_OBJECT_IN_USE` and releases the anode and entry when it cannot be listed |
 | `dirblk_free_live.c` | `RenameAcrossDirs` frees a directory block it leaves empty once no lock or ExNext position points into it (an ExNext position is moved on first), else marks it dirty; `RemoveDirEntry` still marks it dirty |
+| `setdeldir_live.c` | `SetDeldir` changes the deldir size of a clean volume as of a dirty one, refuses it when the commit before fails, on a size outside 0 to 32 and while the deldir or a deleted file is locked, frees the deleted files of dropped blocks and keeps the blocks it could add on a full disk |
+| `setfnsize_live.c` | `dd_SetFileSize` (setfnsize) answers the current size for 0, sets 30 to 107 when not below the current size with `MODE_LONGFN` and a dirty volume, refuses a smaller size with `ERROR_BAD_NUMBER`, 108 and more with `ERROR_OBJECT_TOO_LARGE`, a volume without a rootblock extension with `ERROR_NO_DISK` and another disk id |
+| `setlargefile_live.c` | `dd_SetLargeFile` (setlargefile) answers the state for 0, switches `MODE_LARGEFILE` on for a `PFS\2` volume and keeps it on, refuses a `PFS\1` volume and any value but 0 and 1 with `ERROR_BAD_NUMBER`, a volume without a rootblock extension with `ERROR_NO_DISK` and another disk id |
+| `dir_chainwalk_live.c` | `IsDelfileValid` and the search for the previous block in `MoveToPrevious` end on a looping anode chain with an error; valid chains are walked |
+| `dir_examine_live.c` | `GetFirstEntry`/`GetNextEntry` end an ExNext/ExAll walk on a looping anode chain with `PFS_ERROR_INCONSISTENT`, also a loop of empty blocks inside one call; an anode number linked in again ahead of the position on a chain that ends is not a loop |
 | `dir_isempty_live.c` | `DirIsEmpty` follows a chain of empty directory blocks of any length and ends on a looping one with `PFS_ERROR_INCONSISTENT` |
 | `dir_entries_live.c` | `ExamineAll`/`FillInData` return `PFS_ERROR_INCONSISTENT` for an entry whose name and comment do not fit it instead of retrying it forever (a plain "does not fit the buffer" stays 0); `SearchInDir` and `SearchInDeldir` handle maximum-length names without overflowing their buffer |
 | `dd_openfromlock_live.c` | `dd_OpenFromLock` adds the new fileentry before removing the lock (a failed open leaves the lock usable), hiding the lock from its own conflict check meanwhile |
@@ -74,6 +82,7 @@ has the bug it covers and to PASS once it is fixed. Covered:
 | `initialize_live.c` | `Initialize` rejects a DosEnvec too short to locate the partition and a `de_SizeBlock` outside 1..1024 before allocating anything; defaults `de_MaxTransfer` 0 to 0x20000 and keeps other values; assigns the allocator pointers before every failure return (`Quit` uses them after a failed init); works on `envcopy` for a table without a DosType and in place for one that has it; calls `AddToFSResource` only when `de_TableSize >= DE_DOSTYPE` |
 | `fsresource_live.c` | `AddToFSResource` ignores a zero DosType or a NULL seglist; a valid pair is registered, a duplicate DosType keeps the old entry, and failed allocations leave nothing half-built |
 | `datacache_live.c` | `InitDataCache` frees both blocks and resets the size after a failed allocation; `FreeDataCache` resets the size, so a later loop over the slots cannot touch freed memory |
+| `pfsdoctor_chainloop_live.c` | pfsdoctor: `ChainLoopEnd` finds the anode where a looping directory anode chain links back (0 for a chain that ends or cannot be read) with fewer than six reads per anode |
 
 Not covered by a live test: code that cannot run without AmigaOS or the m68k
 assembler: the startup path (`startup.s`, `FailStartup`), `Quit`, the stack
@@ -126,7 +135,8 @@ cannot be satisfied by leftovers of another one.
   at different points of a write.
 - **T4** power cut just before the Nth write of the write sequence (W writes;
   a full run samples about 40 points including the last three, `--quick` four),
-  plus a cut point past the end that must commit.
+  plus a cut point past the end that must commit. A committed cut must leave
+  as many reserved blocks free as the control run.
 - **T5** `kill -9` of the emulator once the driver has issued 25/50/75/100% of
   the control run's writes (counted through `FI_PROGRESS`, no sleep timing).
   The final commit is a burst of about ten writes that takes under a millisecond,
@@ -184,7 +194,9 @@ make largefile
 uv run tests/largefile64.py [--driver pfs3aio-largefile] [--blocksize 4096] [--pds]
 ```
 
-Formats a sparse 6 GiB image with 4096 byte blocks, switches the large file flag on with `ACTION_SET_LARGEFILE` and drives the 64-bit packets of AmigaOS 4 (`ACTION_CHANGE_FILE_SIZE64`, position, size and the three examine packets) with a file that is grown past 4 GiB: write, seek, read, rename, hard link, truncate and delete. After each step it checks the neighbouring directory entries and the free space. `--blocksize 512` formats 512 byte blocks with a `LARGE_FILE_SIZE` 2 build. Needs a large file build (`LARGE_FILE_SIZE` 1 or 2), `amifuse` and `rdbtool` (`uv venv && uv pip install --no-deps -r tests/requirements.txt`). It takes a few minutes with 4096 byte blocks. `.github/workflows/blackbox-test.yml` runs it as a job of its own, by hand and for changes to the handler sources, the makefile and the test.
+Formats a sparse 6 GiB image with 4096 byte blocks, switches the large file flag on with `ACTION_SET_LARGEFILE` and drives the 64-bit packets of AmigaOS 4 (`ACTION_CHANGE_FILE_SIZE64`, position, size and the three examine packets) with a file that is grown past 4 GiB: write, seek, read, rename, hard link, truncate and delete. After each step it checks the neighbouring directory entries and the free space.
+
+`--blocksize 512` formats 512 byte blocks with a `LARGE_FILE_SIZE` 2 build. Needs a large file build (`LARGE_FILE_SIZE` 1 or 2), `amifuse` and `rdbtool` (`uv venv && uv pip install --no-deps -r tests/requirements.txt`). It takes a few minutes with 4096 byte blocks. `.github/workflows/blackbox-test.yml` runs it as a job of its own, by hand and for changes to the handler sources, the makefile and the test.
 
 ## hard links
 
@@ -202,16 +214,32 @@ make
 uv run tests/manylinks.py [--driver pfs3aio] [--links 4100] [--blocksize 512] [--pds]
 ```
 
-Links one file 4100 times. Every link has to be made, and the functions that follow the link list have to work on the result: rewriting the file with a new size (the new size has to reach the first and the last link), moving it into a directory, deleting the last link and deleting the original (the first link has to become the file). A file is written after the links are made and after each of these steps, and has to succeed. If a link or a step fails, the later steps still run and the first step after which the volume refuses writes (213 Disk not validated) is named. The image is then mounted again in a new process, the directory and a link have to read and a file has to be writable. `.github/workflows/blackbox-test.yml` runs it as a job of its own.
+Links one file 4100 times; every link has to be made. The functions that follow the link list then work on the result, and a file written after the links and after each step has to succeed:
 
-## emptied directory blocks
+- **Rewrite:** the file gets a new size, which has to reach the first and the last link.
+- **Move:** the file moves into a directory.
+- **Delete the last link.**
+- **Delete the original:** the first link has to become the file.
+- **Remount:** the image is mounted again in a new process. The directory and a link have to read and a file has to be writable.
+
+If a link or a step fails, the later steps still run and the first step after which the volume refuses writes (213 Disk not validated) is named. `.github/workflows/blackbox-test.yml` runs it as a job of its own.
+
+## directory block chains
 
 ```sh
 make
-uv run tests/emptyblocks.py [--driver pfs3aio] [--files 1000] [--pds]
+uv run tests/directorychains.py [--driver pfs3aio] [--files 1000] [--pds]
 ```
 
-Creates 1000 files in a directory on a partition with 10 buffers and deletes all but three, oldest first, newest first and in random order, or moves them to another directory. `tests/pfs3img.py` then reads the image: behind the first block of the directory no directory block may be empty, the removed blocks have to be free and the reserved bitmap has to agree with the rootblock. Files are also deleted while a listing of their directory is half way through: the listing has to go on with the files that are left, each listed once. Copies of the image taken during the deletes without a flush, as a power cut would leave it, have to hold a whole directory and mount. The image is then mounted again in a new process, the files that are left have to be listed and a directory can be emptied and deleted. Takes about 30 seconds. `.github/workflows/blackbox-test.yml` runs it as a job of its own.
+Directories of 1000 files on a partition with 10 buffers. `tests/pfs3img.py` reads the image between the steps.
+
+- **Emptied blocks:** all but three files are deleted, oldest first, newest first and in random order, or moved to another directory. Behind the first block of the directory no directory block may be empty, the removed blocks have to be free and the reserved bitmap has to agree with the rootblock.
+- **Listing held open:** files are deleted and created while a listing of their directory is half way through and goes on with another lock. The listing has to go on with the files that are left, each listed once.
+- **Power cut:** copies of the image taken during the deletes without a flush have to hold a whole directory and mount.
+- **Remount:** the image is mounted again in a new process. The files that are left have to be listed and a directory can be emptied and deleted.
+- **Looping chain:** in a copy of the image the last anode of a directory is linked back to its first. A lookup and a create in that directory have to fail with 213 Disk not validated, a listing of it, also with another lock half way through, has to end with that error after every file, and the handler has to answer the next packet.
+
+Takes about 30 seconds. `.github/workflows/blackbox-test.yml` runs it as a job of its own.
 
 ## deleted file in the deldir
 
@@ -220,7 +248,11 @@ make
 uv run tests/deldirloss.py [--driver pfs3aio] [--pds]
 ```
 
-Deletes a file and lists .DELDIR before the next update: the file has to be listed, read back with its content and stay listed after a flush. The same for a file with a hard link: deleting the file leaves it as the link and out of the deldir, deleting the link puts it there. After the volume is filled, the blocks are reused and the entries have to go. Takes seconds. `.github/workflows/blackbox-test.yml` runs it as a job of its own.
+- **Deleted file:** a file is deleted and .DELDIR listed before the next update. The file has to be listed, read back with its content and stay listed after a flush.
+- **File with a hard link:** deleting the file leaves it as the link and out of the deldir, deleting the link puts it there.
+- **Volume filled:** the blocks are reused and the deldir entries have to go.
+
+Takes seconds. `.github/workflows/blackbox-test.yml` runs it as a job of its own.
 
 ## Direct SCSI
 
@@ -229,7 +261,7 @@ make
 uv run tests/hardlink.py --pds
 ```
 
-`largefile64.py`, `hardlink.py`, `manylinks.py`, `emptyblocks.py` and `deldirloss.py` take `--pds`: the partition gets the dostype `PDS\3` and the handler reads and writes it with `HD_SCSICMD` (Direct SCSI). `PDS\3` falls back to the trackdisk commands when Direct SCSI fails, so the device of the test answers every other block transfer with `IOERR_NOCMD` and the test fails instead. `.github/workflows/blackbox-test.yml` runs `largefile64.py`, `hardlink.py`, `emptyblocks.py` and `deldirloss.py` with `--pds` as jobs of their own.
+`largefile64.py`, `hardlink.py`, `manylinks.py`, `directorychains.py` and `deldirloss.py` take `--pds`: the partition gets the dostype `PDS\3` and the handler reads and writes it with `HD_SCSICMD` (Direct SCSI). `PDS\3` falls back to the trackdisk commands when Direct SCSI fails, so the device of the test answers every other block transfer with `IOERR_NOCMD` and the test fails instead. `.github/workflows/blackbox-test.yml` runs `largefile64.py`, `hardlink.py`, `directorychains.py` and `deldirloss.py` with `--pds` as jobs of their own.
 
 ## everything
 

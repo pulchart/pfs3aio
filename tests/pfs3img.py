@@ -6,7 +6,7 @@
 Finds the first partition of the RDB, reads the rootblock, the reserved
 bitmap and the anodes, and lists the dirblock chain of PATH (default the root
 directory): for each block its anode, its location and its number of entries.
-Only the layouts the tests format are read: no supermode (MODE_SUPERINDEX).
+Anodes are read only without supermode (MODE_SUPERINDEX).
 """
 import struct
 import sys
@@ -27,8 +27,8 @@ def u16(b, o):
 
 
 class Image:
-    def __init__(self, path):
-        self.f = open(path, "rb")
+    def __init__(self, path, write=False):
+        self.f = open(path, "r+b" if write else "rb")
         self.part = self._partition()
         self.secsize = self.part[1]
         self.base = self.part[0]
@@ -39,8 +39,6 @@ class Image:
         self.reserved_free = u32(rb, 60)
         self.resblksize = u16(rb, 64)
         self.indexblocks = [u32(rb, 116 + 4 * i) for i in range(99)]
-        if self.options & MODE_SUPERINDEX:
-            raise ValueError("supermode is not supported")
         self.split = bool(self.options & MODE_SPLITTED_ANODES)
         self.rescluster = self.resblksize // self.secsize
         self.anodesperblock = (self.resblksize - 16) // 12
@@ -75,8 +73,10 @@ class Image:
     def reserved(self, nr):
         return self.sectors(nr, self.rescluster)
 
-    def anode(self, nr):
-        """(clustersize, blocknr, next) of anode nr."""
+    def _anode_pos(self, nr):
+        """File offset of anode nr."""
+        if self.options & MODE_SUPERINDEX:
+            raise ValueError("supermode is not supported")
         if self.split:
             seqnr, offset = nr >> 16, nr & 0xffff
         else:
@@ -86,8 +86,17 @@ class Image:
         ab = self.reserved(u32(ib, 12 + 4 * pos))
         if u32(ab, 8) != seqnr:
             raise ValueError("anode block %d has seqnr %d" % (seqnr, u32(ab, 8)))
-        o = 16 + 12 * offset
-        return u32(ab, o), u32(ab, o + 4), u32(ab, o + 8)
+        return self.base + u32(ib, 12 + 4 * pos) * self.secsize + 16 + 12 * offset
+
+    def anode(self, nr):
+        """(clustersize, blocknr, next) of anode nr."""
+        self.f.seek(self._anode_pos(nr))
+        return struct.unpack(">III", self.f.read(12))
+
+    def set_next(self, nr, nxt):
+        """Links anode nr to anode nxt (opened with write=True)."""
+        self.f.seek(self._anode_pos(nr) + 8)
+        self.f.write(struct.pack(">I", nxt))
 
     def entries(self, blk):
         """(name, type, anode) of the entries of a dirblock."""
